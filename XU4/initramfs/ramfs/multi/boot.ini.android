@@ -1,4 +1,3 @@
-ODROIDXU-UBOOT-CONFIG
 #DESCRIPTION "Odroid Android"
  
 # setenv fb_x_res "640"
@@ -87,19 +86,39 @@ setenv hpd "1"
  
 setenv led_blink        "1"
  
-# =================================================
-# = RESTORE boot.scr FOR MULTIBOOT, DO NOT CHANGE =
-# =================================================
-fatload mmc 0:1 0x60000000 multiboot/boot.scr.multi
-fatwrite mmc 0:1 0x60000000 boot.scr ${filesize}
-sleep 1
-# =================================================
-
-#setenv bootcmd      "movi read kernel 0 40008000;bootz 40008000"
-
 setenv bootargs     "fb_x_res=${fb_x_res} fb_y_res=${fb_y_res} hdmi_phy_res=${hdmi_phy_res} edid=${edid} hpd=${hpd} led_blink=${led_blink}"
 
-setenv kernel  "fatload mmc 0:1 40008000 mutiboot/zImage.android"
-setenv bootcmd "${kernel}; bootz 40008000"
+# ========================================================
+# = RESTORE boot.scr FOR MULTIBOOT, DO NOT CHANGE        =
+# ========================================================
+mmc list
+mmc dev
 
-boot
+setenv change_osdev no;
+
+setenv bootdev "0:1";
+if test "${mmc_boot_device}" = "0"; then
+  setenv bootdev "0:1";
+elif test "${mmc_boot_device}" = "1"; then
+  setenv bootdev "1:1";
+fi
+
+setenv os_dev "${bootdev}";
+if test "${change_osdev}" = "yes"; then
+  if test "${bootdev}" = "0:1"; then
+    setenv os_dev "1:1";
+  else
+    setenv os_dev "0:1";
+  fi
+fi
+# ========================================================
+
+fatload mmc ${os_dev} 40008000 /multiboot/zImage.android
+
+# === RESTORE MULTIBOOT SCRIPT ===========================
+fatload mmc ${bootdev} 0x60000000 /multiboot/boot.scr.multi
+fatwrite mmc ${bootdev} 0x60000000 boot.scr ${filesize}
+#=========================================================
+
+# Boot the board
+bootz 40008000"

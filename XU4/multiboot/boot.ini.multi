@@ -1,22 +1,16 @@
-ODROIDXU-UBOOT-CONFIG
+#ODROIDXU-UBOOT-CONFIG
 
 # ===============================================================
 # =              Multi boot & install parameters                =
 # ===============================================================
 # Time (sec) to automatic boot if no key is pressed (min 5)     =
 # ------------------------------------------------------------- =
-setenv BOOT_DELAY "10"
+setenv BOOT_DELAY "600"
 # ===============================================================
 # Menu item to boot if no key is pressed ("1" ~ "8")            =
 # ------------------------------------------------------------- =
 setenv DEFAULT_OS "1"
 #
-# ===============================================================
-
-# ===============================================================
-# Time (sec) to automatic install if no key is pressed          =
-# ------------------------------------------------------------- =
-setenv INST_DELAY "10000"
 # ===============================================================
 
 
@@ -27,13 +21,55 @@ setenv fdt_high "0xffffffff"
 # Mac address configuration
 setenv macaddr "00:1e:06:61:7a:39"
 
-#-------------------------------------------------------------------------------------------------------------------
-# Basic Ubuntu Setup. Don't touch unless you know what you are doing.
-#-------------------------------------------------------------------------------------------------------------------
-setenv bootrootfs "console=tty0 quiet instdelay=${INST_DELAY} no_console_suspend loglevel=0}"
+setenv bootdev "0:1";
+setenv boot_mmc_type "unknown";
+setenv mmc_boot_device 9
+
+# ===================================================================================
+# ==== Get some info about boot device                                           ====
+# ==== Only when booting from multiboot prepared card the values wil be returned ====
+# ===================================================================================
+mmc list
+mmc dev
+
+# ==========================================================================================================================
+# |   Inserted    | ------------------------------------------------------------------------------------------------------ |
+# | emmc | sdcard | switch | boot_mmc0_dev | boot_mmc0_type | boot_mmc1_dev | boot_mmc1_type | mmc_boot_device | boot_from |
+# ==========================================================================================================================
+# | yes  | no     |   SD   |       -       |      ----      |        -      |      ----      |         -       |    ----   |
+# --------------------------------------------------------------------------------------------------------------------------
+# | yes  | no     |  EMMC  |       0       |      eMMC      |        1      |      none      |         0       |    emmc   |
+# --------------------------------------------------------------------------------------------------------------------------
+# | no   | yes    |   SD   |       0       |       SD       |        1      |      none      |         0       |   sdcard  |
+# --------------------------------------------------------------------------------------------------------------------------
+# | no   | yes    |  EMMC  |       -       |      ----      |        -      |      ----      |         -       |    ----   |
+# --------------------------------------------------------------------------------------------------------------------------
+# | yes  | yes    |   SD   |       0       |       SD       |        1      |      eMMC      |         1       |    emmc   |!!
+# --------------------------------------------------------------------------------------------------------------------------
+# | yes  | yes    |  EMMC  |       0       |      eMMC      |        1      |       SD       |         1       |   sdcard  |!!
+# ==========================================================================================================================
+
+
+# =========================================================
+# When mmc_boot_device=1 we have to load from 1:1 device !!
+# =========================================================
+if test "${mmc_boot_device}" = "0"; then
+  setenv bootdev "0:1";
+  setenv boot_mmc_type "${boot_mmc0_type}";
+elif test "${mmc_boot_device}" = "1"; then
+  setenv bootdev "1:1";
+  setenv boot_mmc_type "${boot_mmc1_type}";
+fi
+# =========================================================
+echo "BOOT FROM: ${mmc_boot_device}:${boot_mmc_type}"
+
+#----------------------------------------
+# Set boot variables for kernel/initramfs
+#----------------------------------------
+setenv bootrootfs "console=tty0 quiet boot_card_type=${boot_mmc_type} boot_card_dev=${mmc_boot_device} instdelay=${INST_DELAY} default_boot=${DEFAULT_OS} no_console_suspend loglevel=0}"
 
 # boot commands
-setenv bootcmd "fatload mmc 0:1 0x40008000 multiboot/zImage.multi; fatload mmc 0:1 0x42000000 multiboot/uInitrd.multi; fatload mmc 0:1 0x44000000 multiboot/exynos5422-odroidxu3.dtb.multi; bootz 0x40008000 0x42000000 0x44000000"
+setenv bootcmd "fatload mmc ${bootdev} 0x40008000 multiboot/zImage.multi; fatload mmc ${bootdev} 0x42000000 multiboot/uInitrd.multi; fatload mmc ${bootdev} 0x44000000 multiboot/exynos5422-odroidxu3.dtb.multi; bootz 0x40008000 0x42000000 0x44000000"
 
 # --- Screen Configuration for HDMI --- # 
 # ---------------------------------------
@@ -104,14 +140,6 @@ setenv governor "performance"
 # ------------------------------------------
 # - Powersave (Keeps the CPU's to the lowest possible temps)
 # setenv governor "powersave"
-
-# =================================================
-# = NEEDED FOR BOOT SELECT SCRIPT, DO NOT CHANGE  =
-# =================================================
-mw.b 0x60000000 0x41 0x10
-fatwrite mmc 0:1 0x60000000 _BOOT_FROM_ 10
-sleep 1
-# =================================================
 
 # final boot args
 setenv bootargs "${bootrootfs} ${videoconfig} smsc95xx.macaddr=${macaddr} governor=${governor}"

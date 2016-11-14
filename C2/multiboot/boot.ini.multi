@@ -13,18 +13,13 @@ setenv DEFAULT_OS "1"
 #
 # ===============================================================
 
-# ===============================================================
-# Time (sec) to automatic install if no key is pressed          =
-# ------------------------------------------------------------- =
-setenv INST_DELAY "10000"
-# ===============================================================
 
 # ===============================================================
-# Card type on which is this file, must be SDCARD or EMMCARD    =
+# Card type on which is this file, must be SD or EMMC           =
 # !! DO NOT CHANGE !!                                           =                                        
 # (will be changed automaticaly when installed on EMMC)         =
 # ------------------------------------------------------------- =
-setenv CARD_TYPE "SDCARD"
+setenv CARD_TYPE "SD"
 # ===============================================================
 
 
@@ -155,21 +150,12 @@ setenv maxcpus "4"
 # setenv max_freq "1656"  # 1.656GHz
 setenv max_freq "1536"  # 1.536GHz
 
-
-# =================================================
-# = NEEDED FOR BOOT SELECT SCRIPT, DO NOT CHANGE  =
-# =================================================
-mw.b 0x60000000 0x41 0x10
-fatwrite mmc 0:1 0x60000000 _BOOT_FROM_ 10
-sleep 1
-# =================================================
-
 ###########################################
 
 # Boot Arguments
 if test "${m}" = "custombuilt"; then setenv cmode "modeline=${modeline}"; fi
 
-setenv bootargs "console=tty0 quiet cardtype=${CARD_TYPE} instdelay=${INST_DELAY} boot_delay=${BOOT_DELAY} default_os=${DEFAULT_OS} no_console_suspend loglevel=0 hdmimode=${m} ${comde} m_bpp=${m_bpp} vout=${vout} fsck.repair=yes net.ifnames=0 elevator=noop disablehpd=${hpd} max_freq=${max_freq} maxcpus=${maxcpus} monitor_onoff=${monitor_onoff}"
+setenv bootargs "console=tty0 quiet cardtype=${CARD_TYPE} boot_delay=${BOOT_DELAY} default_os=${DEFAULT_OS} no_console_suspend loglevel=0 hdmimode=${m} ${comde} m_bpp=${m_bpp} vout=${vout} fsck.repair=yes net.ifnames=0 elevator=noop disablehpd=${hpd} max_freq=${max_freq} maxcpus=${maxcpus} monitor_onoff=${monitor_onoff}"
 
 # Booting
 

@@ -30,80 +30,46 @@ print_header() {
 
 print_header
 
-# ** wait for sd/emmc card
-while [ ! -b /dev/mmcblk0 ] && [ ! -b /dev/mmcblk1 ]
-do
-  printf "    Waiting for sd/mmc card...\r"
-  sleep 1
-done
-sleep 1
-
-export CARD1=""
-export CARD2=""
-export CARD1_EMMC=""
-export CARD2_EMMC=""
-export DEST_CARD=""
-export DEST_EMMC=""
-export SINGLE_CARD="yes"
-export SOURCE_CARD=""
-export INST_ANDROID=""
-export INST_OELEC=""
-export INST_LINUX=""
-export INST_LINUX2=""
-export A_FROMDIR=""
-export L_FROMDIR=""
-export L2_FROMDIR=""
-export O_FROMDIR=""
-export INST_DELAY=60
-export SYSTEM_SIZE=1024
-export SYSTEM_MINSIZE=768
-export DATA_SIZE=1024
-export DATA_MINSIZE=1024
-export CACHE_SIZE=256
-export CACHE_MINSIZE=128
-export USERDATA_SIZE=1024
-export USERDATA_MINSIZE=512
-export LINUX_SIZE=2048
-export LINUX_MINSIZE=2048
-export LINUX2_SIZE=2048
-export LINUX2_MINSIZE=2048
-export OELEC_SIZE=512
-export OELEC_MINSIZE=512
-export LINUX_FSTYPE="ext4"
+# Set variables
+CARD1=""
+CARD2=""
+CARD1_EMMC=""
+CARD2_EMMC=""
+DEST_CARD=""
+DEST_EMMC=""
+INST_ANDROID=""
+INST_OELEC=""
+INST_LINUX=""
+INST_LINUX2=""
+A_FROMDIR=""
+L_FROMDIR=""
+L2_FROMDIR=""
+O_FROMDIR=""
+INST_DELAY=60
+SYSTEM_SIZE=1024
+SYSTEM_MINSIZE=768
+DATA_SIZE=1024
+DATA_MINSIZE=1024
+CACHE_SIZE=256
+CACHE_MINSIZE=128
+USERDATA_SIZE=1024
+USERDATA_MINSIZE=512
+LINUX_SIZE=2048
+LINUX_MINSIZE=2048
+LINUX2_SIZE=2048
+LINUX2_MINSIZE=2048
+OELEC_SIZE=512
+OELEC_MINSIZE=512
+LINUX_FSTYPE="ext4"
 
 #-----------------------------------------------------
 # Check card type
 #----------------
-if [ "${O_BOARD}" = "C2" ]; then
-	# === On C2 the boot card is always /dev/mmcblk0 ===
-	CARD1="/dev/mmcblk0"
-	CARD1_EMMC="SD"
-	if [ -b /dev/mmcblk1 ]; then
-		SINGLE_CARD="no"
-		CARD2="/dev/mmcblk1"
-		CARD1_EMMC="EMMC"
-		CARD2_EMMC="SD"
-	fi
-else
-	# === On XU3/XU4 if the EMMC is present, it is /dev/mmcblk0 !! ===
-	# === boot card can be /dev/mmcblk0 or /dev/mmcblk1 ===
-	if [ -b /dev/mmcblk0 ]; then
-		CARD1="/dev/mmcblk0"
-		if [ -b /dev/mmcblk0boot0 ]; then
-			CARD1_EMMC="EMMC"
-		else
-			CARD1_EMMC="SD"
-		fi
-	fi
-	if [ -b /dev/mmcblk1 ]; then
-		SINGLE_CARD="no"
-		CARD2="/dev/mmcblk1"
-		if [ -b /dev/mmcblk1boot0 ]; then
-			CARD2_EMMC="EMMC"
-		else
-			CARD2_EMMC="SD"
-		fi
-	fi
+CARD1="/dev/mmcblk${BOOT_CARDDEV}"
+CARD1_EMMC="${BOOT_CARDTYPE}"
+if [ "${NUMCARDS}" = "2" ]; then
+	CARD2="/dev/mmcblk${OTHER_CARDDEV}"
+	CARD2_EMMC="${OTHER_CARDTYPE}"
 fi
 #-----------------------------------------------------
 
@@ -116,7 +82,6 @@ check_source() {
     if [ -b ${1} ]; then
 		/bin/mountx ${1} /mnt > /dev/null 2>&1
 		[ $? -ne 0 ] && return 1
-		SOURCE_CARD="${1}"
 	else
 		return 1
     fi
@@ -132,7 +97,7 @@ check_source() {
 			A_FROMDIR="yes"
 		fi
     else
-		if [ -f /mnt/update.tar.gz ]; then
+		if [ -f /mnt/update.tar.gz ] || [ -f /mnt/update.zip ]; then
 			INST_ANDROID="yes"
 			_instfound="yes"
 			if [ "${1}" = "/dev/mmcblk0p1" ] || [ "${1}" = "/dev/mmcblk1p1" ]; then
@@ -214,8 +179,8 @@ exit_script() {
 
 print_header
 
-# === Copy multiboot files ===
-mount -t vfat ${BOOT_FROM}p1 /mnt > /dev/null 2>&1
+# === Copy multiboot files from boot drive to RAMfs directory ===
+mount -t vfat /dev/mmcblk${BOOT_CARDDEV}p1 /mnt > /dev/null 2>&1
 if [ $? -ne 0 ]; then
 	printf "    ERROR mounting boot card"
 	exit_script
@@ -240,11 +205,9 @@ printf "    Searching for installation drive ... "
 # === Set default dest card to sdcard if exists ===
 DEST_CARD=${CARD1}
 DEST_EMMC=${CARD1_EMMC}
-if [ "${SINGLE_CARD}" = "no" ]; then
-	if [ ! "${CARD2}" = "${BOOT_FROM}" ]; then
-		DEST_CARD=${CARD2}
-		DEST_EMMC=${CARD2_EMMC}
-	fi
+if [ "${NUMCARDS}" = "2" ]; then
+	DEST_CARD=${CARD2}
+	DEST_EMMC=${CARD2_EMMC}
 fi
 
 check_source "/dev/sda1"
@@ -255,15 +218,9 @@ if [ $? -ne 0 ]; then
 		if [ $? -ne 0 ]; then
 			check_source "/dev/sda4"
 			if [ $? -ne 0 ]; then
-				check_source "/dev/mmcblk0p1"
-				if [ $? -ne 0 ]; then
-					check_source "/dev/mmcblk1p1"
-					if [ $? -ne 0 ]; then
-						printf "    \033[33m\033[1mNOT FOUND\033[22m\033[37m\n"
-						printf "    \033[33m\033[1mInstallation aborted.\033[22m\033[37m\n\n"
-						exit_script
-					fi
-				fi
+				printf "    \033[33m\033[1mNOT FOUND\033[22m\033[37m\n"
+				printf "    \033[33m\033[1mInstallation aborted.\033[22m\033[37m\n\n"
+				exit_script
 			fi
 		fi
 	fi
@@ -498,27 +455,7 @@ set_dest() {
 		if read -n 1 -t 1 -s A; then
 			_wait_delay=30
 			if [ "${A}" = "+" ]; then
-				if [ "${O_BOARD}" = "C2" ]; then
-					if [ "${SINGLE_CARD}" = "yes" ]; then
-						if [ "${DEST_EMMC}" = "SD" ]; then
-							DEST_EMMC="EMMC"
-						else
-							DEST_EMMC="SD"
-						fi
-					else
-						if [ "${DEST_CARD}" = "${CARD1}" ]; then
-							if [ ! "${CARD2}" = "" ]; then
-								DEST_CARD=${CARD2}
-								DEST_EMMC=${CARD2_EMMC}
-							fi
-						elif [ "${DEST_CARD}" = "${CARD2}" ]; then
-							if [ ! "${CARD1}" = "" ]; then
-								DEST_CARD=${CARD1}
-								DEST_EMMC=${CARD1_EMMC}
-							fi
-						fi
-					fi
-				else
+				if [ "${NUMCARDS}" = "2" ]; then
 					if [ "${DEST_CARD}" = "${CARD1}" ]; then
 						if [ ! "${CARD2}" = "" ]; then
 							DEST_CARD=${CARD2}
@@ -529,6 +466,12 @@ set_dest() {
 							DEST_CARD=${CARD1}
 							DEST_EMMC=${CARD1_EMMC}
 						fi
+					fi
+				elif [ "${O_BOARD}" = "C2" ]; then
+					if [ "${DEST_EMMC}" = "SD" ]; then
+						DEST_EMMC="EMMC"
+					else
+						DEST_EMMC="SD"
 					fi
 				fi
 			elif [ "${A}" = "9" ]; then
@@ -1205,7 +1148,7 @@ set_android_sizes() {
 	done
 	CACHE_SIZE=${CACHE_MINSIZE}
 
-	_img_size=$(/bin/lsx -ls ${andro_dest}/userdata.raw.img | awk '{print $1}')
+	_img_size=$(/bin/lsx -ls ${andro_dest}/data.raw.img | awk '{print $1}')
 	_img_size_=$(( $_img_size / 1024 / $PARTSIZE_INC * $PARTSIZE_INC ))
 	while [ $DATA_MINSIZE -lt $_img_size_ ]
 	do
@@ -1294,7 +1237,6 @@ unpack_android() {
 				return 1
 			fi
 			sync
-			echo "OK."
 			andro_source="${source_mount}/android"
 		else
 			echo "ERROR: archive file not found."
@@ -1354,7 +1296,7 @@ unpack_android() {
 			return 1
 		fi
     fi
-
+	
     # All needed images and files are present, get sizes
 	_ramfs_free=$(df | grep tmpfs | awk '{print $4}')
 	_ramfs_free=$(( $_ramfs_free / 1024 - 100 ))
@@ -1398,7 +1340,7 @@ unpack_android() {
 	rm ${andro_source}/cache.img
 
 	printf "data... "
-	simg2img ${andro_source}/userdata.img ${andro_dest}/userdata.raw.img >> ${log_file} 2>&1
+	simg2img ${andro_source}/userdata.img ${andro_dest}/data.raw.img >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
 		echo "ERROR."
 		return 1
@@ -1502,14 +1444,14 @@ install_android() {
     # mount source
 	mount -t ext4 -o ro,loop ${andro_dest}/data.raw.img /mnt1 >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
-		echo "ERROR mounting userdata image."
+		echo "ERROR mounting data image."
 		return 1
 	fi
 	# mount destination
 	mount -t ext4 ${DEST_CARD}p5 /mnt2 >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
 		umount /mnt1 >> ${log_file} 2>&1
-		echo "ERROR mounting userdata partition."
+		echo "ERROR mounting data partition."
 		return 1
 	fi
 	sleep 1
@@ -1559,19 +1501,24 @@ install_android() {
 
     # Install kernel
     printf "\033[36mkernel\033[37m ... "
-	dd if=${andro_dest}/${ODROID_DTB} of=${DEST_CARD} seek=1504 >> ${log_file} 2>&1
-    if [ $? -ne 0 ]; then
-        echo "ERROR installing Android kernel."
-        return 1
-    else
-		dd if=${andro_dest}/${ODROID_IMAGE} of=${DEST_CARD} seek=1632 >> ${log_file} 2>&1
+    if [ "${O_BOARD}" = "xC2" ]; then
+		dd if=${andro_dest}/${ODROID_DTB} of=${DEST_CARD} seek=1504 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
-			echo "ERROR installing Android kernel."
+			echo "ERROR installing Android kernel (DTB)."
 			return 1
 		else
-			echo "OK"
+			dd if=${andro_dest}/${ODROID_IMAGE} of=${DEST_CARD} seek=1632 >> ${log_file} 2>&1
 		fi
-    fi
+    elif [ "${O_BOARD}" = "xXU" ]; then
+		dd if=${andro_dest}/${ODROID_IMAGE} of=${DEST_CARD} seek=1263 >> ${log_file} 2>&1
+	else
+		printf "not needed "
+	fi
+	if [ $? -ne 0 ]; then
+		echo "ERROR installing Android kernel."
+		return 1
+	fi
+	echo "OK"
     sync
     sleep 1
 
@@ -2119,15 +2066,6 @@ if [ "${DEST_EMMC}" = "EMMC" ]; then
     label_pref="em"
 else
     label_pref="sd"
-fi
-
-# --- Check source ---------------------------------------------------------------------------------------------------
-if [ "${SOURCE_CARD}" = "${BOOT_FROM}" ]; then
-	if [ "${ONLY_ANDROID}" != "yes" ]; then
-		printf "    \033[33m\033[1mONLY SINGLE ANDROID INSTALLATION\n    IS POSSIBLE FROM BOOT Card !\033[22m\033[37m\n"
-		umount ${source_mount} > /dev/null 2>&1
-		exit_script
-	fi
 fi
 
 if [ "${INST_ANDROID}" != "yes" ] && [ "${INST_LINUX}" != "yes" ] && [ "${INST_OELEC}" != "yes" ]; then

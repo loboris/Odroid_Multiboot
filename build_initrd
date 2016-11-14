@@ -1,0 +1,15 @@
+#!/bin/bash
+
+
+cp -f scripts/* C2/initramfs/ramfs
+cp -f scripts/* XU4/initramfs/ramfs
+
+cd C2/initramfs
+./pack
+
+cd ../../
+
+cd XU4/initramfs
+./pack
+
+cd ../../
