@@ -99,10 +99,6 @@ fatload mmc 0:1 0x60000000 multiboot/boot.ini.multi
 fatwrite mmc 0:1 0x60000000 boot.ini ${filesize}
 # =================================================
 
-#movi read dtb 0 ${dtbaddr}
-#movi read boot 0 ${loadaddr}
-#booti ${loadaddr} - ${dtbaddr}
-
 setenv kernel  "fatload mmc 0:1 0x11000000 multiboot/Image.android"
 setenv dtb     "fatload mmc 0:1 0x1000000  multiboot/meson64_odroidc2.dtb.android"
 setenv bootseq "booti 0x11000000 - 0x1000000"

@@ -179,17 +179,6 @@ mount_bottom
 nfs_bottom
 local_bottom
 
-#maybe_break bottom
-# We expect udev's init-bottom script to move /dev to ${rootmnt}/dev
-#run_scripts /scripts/init-bottom
-
-# Move /run to the root
-#mount -n -o move /run ${rootmnt}/run
-
-#validate_init() {
-#	run-init -n "${rootmnt}" "${1}"
-#}
-
 
 chown 0:0 /bin/*
 chown 0:0 /sbin/*
@@ -208,6 +197,16 @@ export ODROID_IMAGE="Kernel"
 export ODROID_ASYSTEMIMAGE="androsystem.img"
 export BKP_PREFIX="OD"
 export NUMCARDS="1"
+export UPGRADE_ANDROID="no"
+
+export ASYSTEM_PART="2"
+export ADATA_PART="5"
+export ACACHE_PART="3"
+export ADATA_PART_ORIG="3"
+export ACACHE_PART_ORIG="4"
+export LINUX_PART="7"
+export LINUX2_PART="8"
+export OELEC_PART="6"
 
 _desc=""
 _ini_prefix="multiboot"
@@ -249,20 +248,26 @@ boot_fail="yes"
 # === Set the variables depending on used Odroid board  ===
 if [ -f /ODROID_C2 ]; then
 	O_BOARD="C2"
+	ADATA_PART_ORIG="4"
+	ACACHE_PART_ORIG="3"
 	ODROID_DTB="meson64_odroidc2.dtb"
 	ODROID_FSTAB="fstab.odroidc2"
 	ODROID_IMAGE="Image"
 	ODROID_ASYSTEMIMAGE="rootsystem.img"
 	BKP_PREFIX="C2"
-	BOOT_CARDTYPE="SD"
 	BOOT_CARDDEV="0"
 	if [ -b /dev/mmcblk1p1 ]; then
+		BOOT_CARDTYPE="EMMC"
 		NUMCARDS="2"
 		OTHER_CARDDEV="1"
-		OTHER_CARDTYPE="EMMC"
+		OTHER_CARDTYPE="SD"
+	else
+		BOOT_CARDTYPE="${CARD_TYPE}"
 	fi
 elif [ -f /ODROID_XU ]; then
 	O_BOARD="XU"
+	ADATA_PART_ORIG="3"
+	ACACHE_PART_ORIG="4"
 	ODROID_DTB="exynos5422-odroidxu3.dtb"
 	ODROID_FSTAB="fstab.odroidxu3"
 	ODROID_IMAGE="zImage"
@@ -317,38 +322,46 @@ get_descr() {
 #-----------------------------------------------------------------------------------------------------------------------
 change_afstab() {
 	# === Configure Android fstab to mount the right partitions ===
-	if [ -f /mnt_a/${ODROID_FSTAB}${1} ]; then
-		if [ "${2}" = "yes" ]; then
+	if [ -f /mnt_a/${ODROID_FSTAB} ]; then
+		if [ "${1}" = "yes" ]; then
 			# Two cards, boot to Android on NON Boot card
 			if [ "${O_BOARD}" = "C2" ]; then
-				cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" > _fstab_
+				sed -i "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" /mnt_a/${ODROID_FSTAB}
 			else
 				if [ "${OTHER_CARDTYPE}" = "SD" ]; then
-					cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" > _fstab_
+					cp /mnt_a/${ODROID_FSTAB}.other /mnt_a/${ODROID_FSTAB}
+					sed -i "s/setenv akernel zImage/setenv akernel \/multiboot\/zImage.andro_1/g" /mnt1/boot.ini
 				else
-					cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" > _fstab_
+					cp /mnt_a/${ODROID_FSTAB}.orig /mnt_a/${ODROID_FSTAB}
+					sed -i "s/setenv akernel zImage/setenv akernel \/multiboot\/zImage.android/g" /mnt1/boot.ini
 				fi
 			fi
 		else
+			# One or two cards, boot to Android on Boot card
 			if [ "${O_BOARD}" = "C2" ]; then
-				cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" > _fstab_
+				# Restore boot device if modified earlier
+				sed -i "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" /mnt_a/${ODROID_FSTAB}
 			else
 				if [ "${NUMCARDS}" = "1" ]; then
-					cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" > _fstab_
+					cp /mnt_a/${ODROID_FSTAB}.orig /mnt_a/${ODROID_FSTAB}
+					sed -i "s/setenv akernel zImage/setenv akernel \/multiboot\/zImage.android/g" /mnt1/boot.ini
 				else
 					# Two cards, boot to Android on Boot card
-					if [ "${BOOT_CARDTYPE}" = "SD" ]; then
-						cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" > _fstab_
+					if [ "${BOOT_CARDTYPE}" = "SD" ] && [ "${BOOT_CARDDEV}" = "1" ]; then
+						cp /mnt_a/${ODROID_FSTAB}.other /mnt_a/${ODROID_FSTAB}
+						sed -i "s/setenv akernel zImage/setenv akernel \/multiboot\/zImage.andro_1/g" /mnt1/boot.ini
 					else
-						cat /mnt_a/${ODROID_FSTAB}${1} | sed "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" > _fstab_
+						cp /mnt_a/${ODROID_FSTAB}.orig /mnt_a/${ODROID_FSTAB}
+						sed -i "s/setenv akernel zImage/setenv akernel \/multiboot\/zImage.android/g" /mnt1/boot.ini
 					fi
 				fi
 			fi
 		fi
-		cp _fstab_ /mnt_a/${ODROID_FSTAB}${1} > /dev/null 2>&1
-		rm _fstab_ > /dev/null 2>&1
-	elif [ "${1}" = "" ]; then
-		printf "\033[31m\033[1m %s not found\033[22m\033[37m" "${ODROID_FSTAB}${1}"
+		if [ "${O_BOARD}" = "XU" ]; then
+			cp -f /mnt_a/${ODROID_FSTAB} /mnt_a/${ODROID_FSTAB}.sdboot
+		fi
+	else
+		printf "\033[31m\033[1m %s not found\033[22m\033[37m" "${ODROID_FSTAB}"
 		cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
 		[ "${O_BOARD}" = "XU" ] && cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
 		sleep 3
@@ -372,6 +385,7 @@ do_boot() {
 	local _oncard=""
 	_actmount="mnt1"
 	if [ "${3}" = "2" ]; then
+		# Operating system on NON BOOT card
 		_actmount="mnt2"
 		change_drive="yes"
 	fi
@@ -401,26 +415,20 @@ do_boot() {
 		sleep 1
 
 		if [ "${change_drive}" = "yes" ]; then
-			# === boot.ini from NON-BOOT card, prepare for boot from BOOT card ===
+			# === boot.ini from NON-BOOT card, prepare it for boot from BOOT card ===
 			if [ "${O_BOARD}" = "C2" ]; then
 				# for kernel/initrd/dtb loading
-				cat /mnt1/boot.ini | sed "s/fatload mmc 0:1/fatload mmc 1:1/g" > _bini_
-				cp _bini_ /mnt1/boot.ini
-				rm _bini_
+				sed -i "s/fatload mmc 0:1/fatload mmc 1:1/g" /mnt1/boot.ini
 				# for boot.ini loading from /multiboot (it was changed with previous sed operation!)
-				cat /mnt1/boot.ini | sed "s/1:1 0x60000000/0:1 0x60000000/g" > _bini_
-				cp _bini_ /mnt1/boot.ini
-				rm _bini_
+				sed -i "s/1:1 0x60000000/0:1 0x60000000/g" /mnt1/boot.ini
 			else
 				# for kernel/initrd/dtb loading
-				cat /mnt1/boot.ini | sed "s/setenv change_osdev no/setenv change_osdev yes/g" > _bini_
-				cp _bini_ /mnt1/boot.ini
-				rm _bini_
+				sed -i "s/setenv change_osdev no/setenv change_osdev yes/g" /mnt1/boot.ini
 			fi
 		fi
 
 		if [ "${1}" = "boot.ini.android" ]; then
-			# === mount android system partition to prepare android fstab ===
+			# === mount destination android system partition to prepare android fstab ===
 			mkdir /mnt_a > /dev/null 2>&1
 			if [ "${change_drive}" = "yes" ]; then
 				mount -t ext4 /dev/mmcblk${OTHER_CARDDEV}p2 /mnt_a > /dev/null 2>&1
@@ -437,18 +445,14 @@ do_boot() {
 			fi
 
 			# === Configure Android fstab to mount the right partitions ===
-			change_afstab "" "${change_drive}"
+			change_afstab "${change_drive}"
 			[ $? -ne 0 ] && return 1
-			change_afstab ".sdcard" "${change_drive}"
-			change_afstab ".sdboot" "${change_drive}"
 			umount /mnt_a > /dev/null 2>&1
 			# =============================================================
 
 			if [ "${O_BOARD}" = "C2" ] && [ "${change_drive}" = "yes" ]; then
 				# on C2 prepare boot.ini for boot from sdcard, not needed on XU
-				cat /mnt1/boot.ini | sed "s/root=\/dev\/mmcblk0p2/root=\/dev\/mmcblk1p2/g" > _bini_
-				cp _bini_ /mnt1/boot.ini
-				rm _bini_
+				sed -i "s/root=\/dev\/mmcblk0p2/root=\/dev\/mmcblk1p2/g" /mnt1/boot.ini
 			fi
 		fi
 
@@ -463,10 +467,23 @@ do_boot() {
 				umount /mnt_a > /dev/null 2>&1
 				return 1
 			fi
+			if [ -f /mnt1/multiboot/newscr ]; then
+				mkimage -C none -A arm -T script -d /mnt1/multiboot/boot.ini.multi /mnt1/multiboot/boot.scr.multi > /dev/null 2>&1
+				if [ $? -ne 0 ]; then
+					printf "\033[31m\033[1m mkimage (boot.scr.multi) ERROR\033[22m\033[37m"
+					cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
+					cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
+					sleep 3
+					umount /mnt_a > /dev/null 2>&1
+					return 1
+				fi
+				rm -f /mnt1/multiboot/newscr > /dev/null 2>&1
+			fi
 		fi
 		sleep 1
 		umount /mnt1
 		umount /mnt2 > /dev/null 2>&1
+		fsck.fat -aw /dev/mmcblk${BOOT_CARDDEV}p1 > /dev/null 2>&1
 		reboot
 	fi
 }
@@ -808,6 +825,7 @@ while true; do
 				sleep 1
 				# ============================
 				# Execute the installer script
+				UPGRADE_ANDROID="no"
 				/install.script
 				# ============================
 				A="Z"
@@ -820,9 +838,23 @@ while true; do
 			fi
 		elif [ "${A}" = "U" ]; then
 			# === ANDROID UPGRADE ====
-			printf "\r\033[2K"
-			printf "    NOT SUPPORTED"
-			sleep 4
+			if [ -f /install.script ]; then
+				umount /mnt1  > /dev/null 2>&1
+				umount /mnt2  > /dev/null 2>&1
+				sleep 1
+				# =========================
+				# Execute the backup script
+				UPGRADE_ANDROID="yes"
+				/install.script
+				# =========================
+				A="Z"
+				os_detect
+				_boot_delay=$BOOTDELAY
+			else
+				printf "\r\033[2K"
+				printf "    BACKUP SCRIPT NOT FOUND!"
+				sleep 4
+			fi
 		elif [ "${A}" = "X" ]; then
 			# === ENTER BUSYBOX ===
 			clear
@@ -850,11 +882,14 @@ while true; do
 			B="X"
 			while [ $_reboot_delay -gt 0 ]; do
 				printf "\r\033[2K"
-				printf "    \033[33m\033[1mREBOOT in %s sec, press \033[22ma\033[1m to abort \033[22m\033[37m\r" "$_reboot_delay"
+				printf "    \033[33m\033[1mREBOOT in %s sec, press \033[22ma\033[1m to abort, \033[22mr\033[1m to reboot \033[22m\033[37m\r" "$_reboot_delay"
 				if read -n 1 -t 1 -s B; then
 					_reboot_delay=10
 					if [ "${B}" = "a" ] || [ "${B}" = "A" ]; then
 						printf "\r\033[2K"
+						break
+					elif [ "${B}" = "r" ] || [ "${B}" = "R" ]; then
+						_reboot_delay=0
 						break
 					fi
 				else

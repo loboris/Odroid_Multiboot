@@ -2,6 +2,7 @@
 
 sd_multi="no"
 card_no="0"
+multiboot_label="sd"
 
 #--------------------------------------------------
 disp_header() {
@@ -24,8 +25,12 @@ disp_header() {
 #--------------------------------------------------
 
 #------------------------------------------------------------------------------------------------------------
+# arg1: full path to image file
+# arg2: description
+# arg3: backup type, 'andro' or 'linux'
+# source partition is mounted on /mnt1
+
 make_image() {
-	# source partition is mounted on /mnt1
 	mkdir /imgmnt >> ${log_file} 2>&1
 
 	printf "    Backup: \033[32m%s\033[37m ... preparing image... " "${2}"
@@ -88,56 +93,60 @@ make_image() {
 backup_android() {
 	printf "\n    Backup: \033[32m\033[1mAndroid\033[22m\033[37m\n"
 
-	# backup system partition, allready mounted on /mnt1
+	# === backup system partition, already mounted on /mnt1 ===
 	mkdir /mnt2/${BKP_PREFIX}_backup >> ${log_file} 2>&1
 	mkdir /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
 	rm -rf /mnt2/${BKP_PREFIX}_backup/android/* >> ${log_file} 2>&1
+	mkdir /mnt2/${BKP_PREFIX}_backup/android/userdir >> ${log_file} 2>&1
 
 	make_image "/mnt2/${BKP_PREFIX}_backup/android/system.raw.img" "Android system" "andro"
-	if [ $? -eq 0 ]; then
-		umount /mnt1 >> ${log_file} 2>&1
-
-		# backup data partition
-		if [ "${sd_multi}" = "yes" ]; then
-			/bin/mountx /dev/mmcblk${card_no}p5 /mnt1 >> ${log_file} 2>&1
-		else
-			/bin/mountx /dev/mmcblk${card_no}p4 /mnt1 >> ${log_file} 2>&1
-		fi
-		if [ $? -ne 0 ]; then
-			umount /mnt1 >> ${log_file} 2>&1
-			printf "    ERROR mounting data partition\n"
-			return 1
-		fi
-
-		make_image "/mnt2/${BKP_PREFIX}_backup/android/data.raw.img" "Android data" "andro"
-		if [ $? -eq 0 ]; then
-			umount /mnt1 >> ${log_file} 2>&1
-
-			# backup cache partition
-			/bin/mountx /dev/mmcblk${card_no}p3 /mnt1 >> ${log_file} 2>&1
-			if [ $? -ne 0 ]; then
-				umount /mnt1 >> ${log_file} 2>&1
-				printf "    ERROR mounting cache partition\n"
-				return 1
-			fi
-
-			make_image "/mnt2/${BKP_PREFIX}_backup/android/cache.raw.img" "Android cache" "andro"
-			if [ $? -ne 0 ]; then
-				umount /mnt1 >> ${log_file} 2>&1
-				return 1
-			fi
-		else
-			umount /mnt1 >> ${log_file} 2>&1
-			return 1
-		fi
-	else
+	if [ $? -ne 0 ]; then
 		umount /mnt1 >> ${log_file} 2>&1
 		return 1
 	fi
 
 	umount /mnt1 >> ${log_file} 2>&1
+	# === backup data partition ===
+	if [ "${sd_multi}" = "yes" ]; then
+		/bin/mountx /dev/disk/by-label/${multiboot_label}data /mnt1 >> ${log_file} 2>&1
+	else
+		# Original Odroid android
+		/bin/mountx /dev/mmcblk${card_no}p${ADATA_PART_ORIG} /mnt1 >> ${log_file} 2>&1
+	fi
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		printf "    ERROR mounting data partition\n"
+		return 1
+	fi
 
-	# Mount boot card and copy android boot files
+	make_image "/mnt2/${BKP_PREFIX}_backup/android/data.raw.img" "Android data" "andro"
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		return 1
+	fi
+
+	umount /mnt1 >> ${log_file} 2>&1
+	# === backup cache partition ===
+	if [ "${sd_multi}" = "yes" ]; then
+		/bin/mountx /dev/disk/by-label/${multiboot_label}cache /mnt1 >> ${log_file} 2>&1
+	else
+		# Original Odroid android
+		/bin/mountx /dev/mmcblk${card_no}p${ACACHE_PART_ORIG} /mnt1 >> ${log_file} 2>&1
+	fi
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		printf "    ERROR mounting cache partition\n"
+		return 1
+	fi
+
+	make_image "/mnt2/${BKP_PREFIX}_backup/android/cache.raw.img" "Android cache" "andro"
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		return 1
+	fi
+
+	umount /mnt1 >> ${log_file} 2>&1
+	# === Mount boot card and copy android user data and boot files ===
 	printf "    Backup: \033[32mCopy boot files\033[37m ... "
 	mount -t vfat /dev/mmcblk${card_no}p1 /mnt1 >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
@@ -145,11 +154,10 @@ backup_android() {
 		return 1
 	fi
 
-	cp -rf /mnt1/* /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
-	rm -f /mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} >> ${log_file} 2>&1
-	rm -f /mnt2/${BKP_PREFIX}_backup/android/${ODROID_DTB} >> ${log_file} 2>&1
-	rm -rf /mnt2/${BKP_PREFIX}_backup/android/multiboot/* >> ${log_file} 2>&1
-	rmdir /mnt2/${BKP_PREFIX}_backup/android/multiboot >> ${log_file} 2>&1
+	cp -rf /mnt1/* /mnt2/${BKP_PREFIX}_backup/android/userdir >> ${log_file} 2>&1
+	rm -rf /mnt2/${BKP_PREFIX}_backup/android/userdir/multiboot/* >> ${log_file} 2>&1
+	rmdir /mnt2/${BKP_PREFIX}_backup/android/userdir/multiboot >> ${log_file} 2>&1
+	rm -f /mnt2/${BKP_PREFIX}_backup/android/userdir/boot.ini >> ${log_file} 2>&1
 
 	if [ "${sd_multi}" = "yes" ]; then
 		cp /mnt1/multiboot/${ODROID_IMAGE}.android /mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} >> ${log_file} 2>&1
@@ -157,21 +165,48 @@ backup_android() {
 			printf "ERROR: Image\n"
 			return 1
 		fi
-		cp /mnt1/multiboot/${ODROID_DTB}.android /mnt2/${BKP_PREFIX}_backup/android/${ODROID_DTB} >> ${log_file} 2>&1
-		if [ $? -ne 0 ]; then
-			printf "ERROR: dtb\n"
-			return 1
+		if [ "${O_BOARD}" = "C2" ]; then
+			cp /mnt1/multiboot/${ODROID_DTB}.android /mnt2/${BKP_PREFIX}_backup/android/${ODROID_DTB} >> ${log_file} 2>&1
+			if [ $? -ne 0 ]; then
+				printf "ERROR: dtb\n"
+				return 1
+			fi
 		fi
 	else
-		cp /mnt1/${ODROID_IMAGE} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
-		if [ $? -ne 0 ]; then
-			printf "ERROR: Image\n"
-			return 1
+		# Original Odroid android, extract kernel/dtp from the card
+		if [ -f /mnt1/${ODROID_IMAGE} ]; then
+			cp /mnt1/${ODROID_IMAGE} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
+			if [ $? -ne 0 ]; then
+				printf "ERROR: Kernel\n"
+				return 1
+			fi
+		else
+			if [ "${O_BOARD}" = "C2" ]; then
+				dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1632 count=32768 >> ${log_file} 2>&1
+			else
+				dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1263 count=16384 >> ${log_file} 2>&1
+			fi
+			if [ $? -ne 0 ]; then
+				printf "ERROR: Kernel\n"
+				return 1
+			fi
+			sync
 		fi
-		cp /mnt1/${ODROID_DTB} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
-		if [ $? -ne 0 ]; then
-			printf "ERROR: dtb\n"
-			return 1
+		if [ -f /mnt1/${ODROID_DTB} ]; then
+			cp /mnt1/${ODROID_DTB} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
+			if [ $? -ne 0 ]; then
+				printf "ERROR: dtb\n"
+				return 1
+			fi
+		else
+			if [ "${O_BOARD}" = "C2" ]; then
+				dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_DTB} bs=512 skip=1504 count=128 >> ${log_file} 2>&1
+				if [ $? -ne 0 ]; then
+					printf "ERROR: dtb\n"
+					return 1
+				fi
+				sync
+			fi
 		fi
 	fi
 	umount /mnt1 >> ${log_file} 2>&1
@@ -187,7 +222,7 @@ backup_android() {
 backup_linux() {
 	printf "\n    Backup: \033[32m\033[1mLinux%s\033[22m\033[37m\n" "${1}"
 
-	# backup Linux partition, allready mounted on /mnt1
+	# backup Linux partition, already mounted on /mnt1
 	mkdir /mnt2/${BKP_PREFIX}_backup >> ${log_file} 2>&1
 	mkdir /mnt2/${BKP_PREFIX}_backup/linux${1} >> ${log_file} 2>&1
 	rm -rf /mnt2/${BKP_PREFIX}_backup/linux${1}/* >> ${log_file} 2>&1
@@ -254,7 +289,7 @@ backup_linux() {
 backup_oelec() {
 	printf "\n    Backup: \033[32m\033[1mOpenElec\033[22m\033[37m\n"
 
-	# backup oelec partition, allready mounted on /mnt1
+	# === backup oelec partition, allready mounted on /mnt1 ===
 	mkdir /mnt2/${BKP_PREFIX}_backup >> ${log_file} 2>&1
 	mkdir /mnt2/${BKP_PREFIX}_backup/oelec >> ${log_file} 2>&1
 	rm -rf /mnt2/${BKP_PREFIX}_backup/oelec/* >> ${log_file} 2>&1
@@ -270,7 +305,7 @@ backup_oelec() {
 
 	umount /mnt1 >> ${log_file} 2>&1
 
-	# Mount boot card and copy OpenElec boot files
+	# === Mount boot card and copy OpenElec boot files ===
 	printf "    Backup: \033[32mCopy OpenElec files\033[37m ... "
 	mount -t vfat /dev/mmcblk${card_no}p1 /mnt1 >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
@@ -438,10 +473,10 @@ log_file="/mnt2/backup.log"
 #log_file="ls/dev/null"
 
 # Check source drive
-if [ -b /dev/mmcblk1 ]; then
+if [ "${NUMCARDS}" = "2" ]; then
 	printf "    \033[33mTwo cards detected, select which one to use for backup\033[37m\n\n"
-	printf "    \033[32m\033[1m0\033[22m EMMC Card\033[37m\n"
-	printf "    \033[32m\033[1m1\033[22m SD Card\033[37m\n\n"
+	printf "    \033[32m\033[1m0\033[22m Boot card (%s)\033[37m\n" "${BOOT_CARDTYPE}"
+	printf "    \033[32m\033[1m1\033[22m Other card (%s)\033[37m\n\n" "${OTHER_CARDTYPE}"
 
 	_delay=30
 	while [ $_delay -gt 0 ]; do
@@ -450,9 +485,12 @@ if [ -b /dev/mmcblk1 ]; then
 		if read -n 1 -t 1 -s B; then
 			_delay=30
 			if [ "${B}" = "0" ]; then
+				card_no="${BOOT_CARDDEV}"
+				card_type="${BOOT_CARDTYPE}"
 				break
 			elif [ "${B}" = "1" ]; then
-				card_no="1"
+				card_no="${OTHER_CARDDEV}"
+				card_type="${OTHER_CARDTYPE}"
 				break
 			fi
 		else
@@ -462,31 +500,28 @@ if [ -b /dev/mmcblk1 ]; then
 	disp_header
 fi
 
-# Display backup info
+# === Display backup info ===
 printf "    \033[32mBackup from "
 
-card_type="SD"
-if [ -b /dev/disk/by-label/sduserdata ] || [ -b /dev/disk/by-label/emuserdata ]; then
-	sd_multi="yes"
-	# shellcheck disable=SC2010
-	tmp_crdtype=`ls -l /dev/disk/by-label | grep mmcblk${card_no}p1 | awk '{print $4}'`
-	[ "${tmp_crdtype}" = "emuserdata" ] && card_type="EMMC"
-	printf "\033[1mMultiBoot\033[22m %s card " "${card_type}"
+if [ "${card_type}" = "SD" ]; then
+	multiboot_label="sd"
 else
-	if [ -b /dev/mmcblk1 ] && [ "${card_no}" = "0" ]; then
-		card_type="EMMC"
-	elif [ -b /dev/mmcblk1 ] && [ "${card_no}" = "1" ]; then
-		card_type="SD"
-	else
-		card_type="SD/EMMC"
-	fi
-	printf "\033[1mOriginal Odroid\033[22m %s card " "${card_type}"
+	multiboot_label="em"
 fi
 
+# === Check if the backup is from multiboot card ===
+# shellcheck disable=SC2010
+tmp_crdtype=`ls -l /dev/disk/by-label | grep mmcblk${card_no}p1 | awk '{print $4}'`
+if [ "${tmp_crdtype}" = "${multiboot_label}userdata" ]; then
+	sd_multi="yes"
+	printf "\033[1mMultiBoot\033[22m %s card " "${card_type}"
+else
+	printf "\033[1mOriginal Odroid\033[22m %s card " "${card_type}"
+fi
 printf " to \033[1mUSB partition #%s\033[22m\033[37m\n\n" "${usb_part}"
 
 
-# Mount partition 2 (Android system or Linux)
+# === Mount partition 2 (Android system or Linux) ===
 /bin/mountx /dev/mmcblk${card_no}p2 /mnt1 >> ${log_file} 2>&1
 if [ $? -ne 0 ]; then
 	umount /mnt2 > /dev/null 2>&1
@@ -494,7 +529,7 @@ if [ $? -ne 0 ]; then
 	exit_script
 fi
 
-# Wait for confirmation
+# === Wait for backup confirmation ===
 _delay=30
 while [ $_delay -gt 0 ]; do
 	printf "    \033[33mReady for backup, press \033[1mY\033[22m to continue, \033[1mE\033[22m to exit (%s)  \033[37m\r" "${_delay}"
@@ -517,10 +552,11 @@ while [ $_delay -gt 0 ]; do
 done
 if [ $_delay -eq 0 ]; then
 	printf "\r\033[2K"
+	umount /mnt2 > /dev/null 2>&1
 	exit_script
 fi
 
-# Ckeck if it is Android partition
+# === Ckeck if it is Android partition ===
 if [ -f /mnt1/${ODROID_FSTAB} ]; then
 	backup_android
 else
@@ -533,11 +569,13 @@ else
 fi
 
 umount /mnt1 >> ${log_file} 2>&1
+
+# === For multiboot card backup, continue to backup other operating systems ===
 if [ "${sd_multi}" = "yes" ]; then
-	if [ -b /dev/disk/by-label/sdlinux ] || [ -b /dev/disk/by-label/emlinux ]; then
+	if [ -b /dev/disk/by-label/${multiboot_label}linux ]; then
 		printf "\n"
-		# Backup multiboot Linux
-		/bin/mountx /dev/mmcblk${card_no}p7 /mnt1 >> ${log_file} 2>&1
+		# === Backup multiboot Linux ===
+		/bin/mountx /dev/disk/by-label/${multiboot_label}linux /mnt1 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			printf "    ERROR mounting Linux partition\n"
 			exit_script
@@ -548,10 +586,10 @@ if [ "${sd_multi}" = "yes" ]; then
 	fi
 	umount /mnt1 >> ${log_file} 2>&1
 
-	if [ -b /dev/disk/by-label/sdlinux2 ] || [ -b /dev/disk/by-label/emlinux2 ]; then
+	if [ -b /dev/disk/by-label/${multiboot_label}linux2 ]; then
 		printf "\n"
-		# Backup multiboot Linux2
-		/bin/mountx /dev/mmcblk${card_no}p8 /mnt1 >> ${log_file} 2>&1
+		# === Backup multiboot Linux2 ===
+		/bin/mountx /dev/disk/by-label/${multiboot_label}linux2 /mnt1 >> ${log_file} 2>&1
 		if [ $? -eq 0 ]; then
 			if [ -f /mnt1/etc/fstab ]; then
 				backup_linux "2"
@@ -559,10 +597,10 @@ if [ "${sd_multi}" = "yes" ]; then
 		fi
 	fi
 
-	if [ -b /dev/disk/by-label/sdaux ] || [ -b /dev/disk/by-label/emaux ]; then
+	if [ -b /dev/disk/by-label/${multiboot_label}aux ]; then
 		printf "\n"
-		# Backup multiboot OpenElec
-		/bin/mountx /dev/mmcblk${card_no}p6 /mnt1 >> ${log_file} 2>&1
+		# === Backup multiboot OpenElec ===
+		/bin/mountx /dev/disk/by-label/${multiboot_label}aux /mnt1 >> ${log_file} 2>&1
 		if [ $? -eq 0 ]; then
 			backup_oelec
 		fi

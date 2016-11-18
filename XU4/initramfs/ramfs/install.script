@@ -56,11 +56,15 @@ USERDATA_SIZE=1024
 USERDATA_MINSIZE=512
 LINUX_SIZE=2048
 LINUX_MINSIZE=2048
-LINUX2_SIZE=2048
-LINUX2_MINSIZE=2048
 OELEC_SIZE=512
 OELEC_MINSIZE=512
 LINUX_FSTYPE="ext4"
+_dest_system="/dev/disk/by-label/sdystem"
+_dest_cache="/dev/disk/by-label/sdcache"
+_dest_data="/dev/disk/by-label/sddata"
+_erase_data="no"
+_part6_label="auxpart"
+_part6_dlabel="Reserved"
 
 #-----------------------------------------------------
 # Check card type
@@ -100,11 +104,10 @@ check_source() {
 		if [ -f /mnt/update.tar.gz ] || [ -f /mnt/update.zip ]; then
 			INST_ANDROID="yes"
 			_instfound="yes"
-			if [ "${1}" = "/dev/mmcblk0p1" ] || [ "${1}" = "/dev/mmcblk1p1" ]; then
-				return 0
-			fi
 		fi
 	fi
+
+	[ "${UPGRADE_ANDROID}" = "yes" ] && return 0
 
     # LINUX
     if [ -d /mnt/${BKP_PREFIX}_backup/linux ]; then
@@ -125,24 +128,35 @@ check_source() {
 		if [ -d /mnt/${BKP_PREFIX}_backup/linux2 ]; then
 			if [ -f /mnt/${BKP_PREFIX}_backup/linux2/linux.img ]; then
 				INST_LINUX2="yes"
+				_part6_label="linux2"
+				_part6_dlabel="Linux #2"
 				_instfound="yes"
 				L2_FROMDIR="yes"
 			fi
 		else
 			if [ -f /mnt/linux2.img ]; then
 				INST_LINUX2="yes"
+				_part6_label="linux2"
+				_part6_dlabel="Linux #2"
 			fi
 		fi
 	fi
 
-    if [ -d /mnt/${BKP_PREFIX}_backup/oelec/target ] && [ -d /mnt/${BKP_PREFIX}_backup/oelec/3rdparty ]; then
-		INST_OELEC="yes"
-		O_FROMDIR="yes"
-    else
-		if [ -f /mnt/oelec.tar ]; then
+	if [ ! "${INST_ANDROID}" = "yes" ] || [ ! "${INST_LINUX2}" = "yes" ]; then
+		# === OpenElec instalation is possible only if Android OR Linux2 are not installed ===
+		if [ -d /mnt/${BKP_PREFIX}_backup/oelec/target ] && [ -d /mnt/${BKP_PREFIX}_backup/oelec/3rdparty ]; then
 			INST_OELEC="yes"
+			O_FROMDIR="yes"
+			_part6_label="oelec"
+			_part6_dlabel="OpenElec"
+		else
+			if [ -f /mnt/oelec.tar ]; then
+				INST_OELEC="yes"
+				_part6_label="oelec"
+				_part6_dlabel="OpenElec"
+			fi
 		fi
-	fi
+    fi
 
 	[ "${_instfound}" = "no" ] && return 1
     return 0
@@ -173,6 +187,8 @@ exit_script() {
 	umount /mnt1 > /dev/null 2>&1
 	umount /mnt2 > /dev/null 2>&1
 	umount /mnt > /dev/null 2>&1
+
+	udevadm trigger --action=add > /dev/null 2>&1
 	exit 0
 }
 #----------------------------------------------------------------------------------------------------
@@ -218,8 +234,7 @@ if [ $? -ne 0 ]; then
 		if [ $? -ne 0 ]; then
 			check_source "/dev/sda4"
 			if [ $? -ne 0 ]; then
-				printf "    \033[33m\033[1mNOT FOUND\033[22m\033[37m\n"
-				printf "    \033[33m\033[1mInstallation aborted.\033[22m\033[37m\n\n"
+				printf "    \033[33m\033[1mNOT FOUND, aborted\033[22m\033[37m\n"
 				exit_script
 			fi
 		fi
@@ -236,20 +251,21 @@ if [ ! "${INST_ANDROID}" = "yes" ]; then
 	USERDATA_MINSIZE=256
 	USERDATA_SIZE=256
 fi
-if [ ! "${INST_OELEC}" = "yes" ]; then
+if [ ! "${INST_OELEC}" = "yes" ] && [ ! "${INST_LINUX2}" = "yes" ]; then
 	OELEC_MINSIZE=8
-	OELEC_SIZE=512
+	OELEC_SIZE=256
+else
+	if [ "${INST_OELEC}" = "yes" ]; then
+		OELEC_MINSIZE=256
+		OELEC_SIZE=512
+	elif [ "${INST_LINUX2}" = "yes" ]; then
+		OELEC_MINSIZE=1563
+		OELEC_SIZE=1536
+	fi
 fi
 if [ ! "${INST_LINUX}" = "yes" ]; then
 	LINUX_MINSIZE=8
 	LINUX_SIZE=8
-fi
-if [ "${INST_LINUX2}" = "yes" ]; then
-	let LINUX_MINSIZE=LINUX_MINSIZE+LINUX_MINSIZE
-	let LINUX_SIZE=LINUX_SIZE+LINUX_SIZE
-else
-	LINUX2_MINSIZE=0
-	LINUX2_SIZE=0
 fi
 #=================================================
 
@@ -257,9 +273,9 @@ fi
 #=================================================
 
 if [ "${O_BOARD}" = "C2" ]; then
-	part_start=65536       # RESERVE 32M AT CARD START
+	part_start=65536		# RESERVE 32M AT CARD START
 else
-	part_start=131072      # RESERVE 64MB AT CARD START
+	part_start=8192			#131072      # RESERVE 64MB AT CARD START
 fi
 
 PARTSIZE_INC=128
@@ -270,9 +286,15 @@ export MULTI_BOOT="yes"
 export source_mount="/mnt"
 export TWO_CARDS="no"
 
-rm /mnt/install.log > /dev/null 2>&1
-log_file="/mnt/install.log"
-#log_file="ls/dev/null"
+if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+	rm /mnt/upgrade.log > /dev/null 2>&1
+	log_file="/mnt/upgrade.log"
+	#log_file="ls/dev/null"
+else
+	rm /mnt/install.log > /dev/null 2>&1
+	log_file="/mnt/install.log"
+	#log_file="ls/dev/null"
+fi
 
 #--------------------------------------------------------------------------------------------------------------------------------------
 if [ "${INST_LINUX}" = "yes" ] && [ "${INST_ANDROID}" != "yes" ] && [ "${INST_OELEC}" != "yes" ] && [ "${INST_LINUX2}" != "yes" ]; then
@@ -390,11 +412,7 @@ print_settings() {
     [ "${ONLY_LINUX}" != "yes" ] && printf "      system partition size: \033[36m${SYSTEM_SIZE}M\033[37m\n"
     [ "${ONLY_LINUX}" != "yes" ] && printf "        data partition size: \033[36m${DATA_SIZE}M\033[37m\n"
     [ "${INST_ANDROID}" = "yes" ] && printf "       cache partition size: \033[36m${CACHE_SIZE}M\033[37m\n"
-	if [ "${INST_OELEC}" = "yes" ]; then
-		[ "${MULTI_BOOT}" = "yes" ] && printf "    openELEC partition size: \033[36m${OELEC_SIZE}M\033[37m\n"
-	else
-		[ "${MULTI_BOOT}" = "yes" ] && printf "    swap/aux partition size: \033[36m${OELEC_SIZE}M\033[37m\n"
-	fi
+	printf "    ${_part6_dlabel} partition size: \033[36m${OELEC_SIZE}M\033[37m\n"
 	if [ "${INST_LINUX}" = "yes" ]; then
 		if [ "${INST_LINUX2}" = "yes" ]; then
 			printf "   linux 1&2 partition size: \033[36m${LINUX_SIZE}M\033[37m\n"
@@ -418,10 +436,8 @@ print_settings() {
     [ "${INST_ANDROID}" = "yes" ] && printf "    \033[32m\033[1m3\033[22m  Change \033[1msystem\033[22m partition size\033[36m\n"
     [ "${INST_ANDROID}" = "yes" ] && printf "    \033[32m\033[1m4\033[22m  Change \033[1mdata\033[22m partition size\033[36m\n"
     [ "${INST_ANDROID}" = "yes" ] && printf "    \033[32m\033[1m5\033[22m  Change \033[1mcache\033[22m partition size\033[36m\n"
-	if [ "${INST_OELEC}" = "yes" ]; then
-		[ "${MULTI_BOOT}" = "yes" ] && printf "    \033[32m\033[1m6\033[22m  Change \033[1moElec\033[22m partition size\033[36m\n"
-	else
-		[ "${MULTI_BOOT}" = "yes" ] && printf "    \033[32m\033[1m6\033[22m  Change \033[1mswap/aux\033[22m partition size\033[36m\n"
+	if [ "${INST_OELEC}" = "yes" ] && [ "${MULTI_BOOT}" = "yes" ]; then
+		printf "    \033[32m\033[1m6\033[22m  Change \033[1m${_part6_dlabel}\033[22m partition size\033[36m\n"
 	fi
     if [ "${INST_LINUX}" = "yes" ]; then
 		if [ "${INST_LINUX2}" = "yes" ]; then
@@ -429,17 +445,13 @@ print_settings() {
 		fi
 		printf "\n"
 		printf "    \033[32m\033[1mt\033[22m  Change Linux \033[1mfile system type\033[22m\033[36m\n"
-		printf "\n"
-	else
-		printf "\n"
     fi
-    printf "    \033[35m\033[1mI\033[22m  Start installation\033[36m\n"
-	printf "\n"
-    printf "    \033[33m\033[1mE\033[22m  EXIT\033[36m\n"
-    printf "\033[37m\n"
-    if [ "${LINUX_FSTYPE}" = "btrfs" ]; then
+
+	printf "\n    \033[35m\033[1mI\033[22m  Start installation\033[36m\n"
+    printf "\n    \033[33m\033[1mE\033[22m  EXIT\033[37m\n\n"
+    if [ "${LINUX_FSTYPE}" = "btrfs" ] && [ "${O_BOARD}" = "C2" ]; then
 		printf "\033[32m\033[1m    WARNING\033[22m: only install to btrfs if Linux install image is prepared for it\n"
-		printf "             if not shure, use ext4\033[36m\n"
+		printf "             if not shure, use ext4\033[37m\n"
     fi
 }
 #---------------------------------------------------------------------------------------------------------------------------
@@ -528,10 +540,10 @@ set_systemsize() {
 			if [ "${A}" = "+" ]; then
 				let SYSTEM_SIZE=SYSTEM_SIZE+PARTSIZE_INC
 				set_auto_partsize
-			if [ $? -ne 0 ]; then
-				let SYSTEM_SIZE=SYSTEM_SIZE-PARTSIZE_INC
-				set_auto_partsize
-			fi
+				if [ $? -ne 0 ]; then
+					let SYSTEM_SIZE=SYSTEM_SIZE-PARTSIZE_INC
+					set_auto_partsize
+				fi
 			elif [ "${A}" = "-" ]; then
 				let SYSTEM_SIZE=SYSTEM_SIZE-${PARTSIZE_INC}
 				[ $SYSTEM_SIZE -lt $SYSTEM_MINSIZE ] && SYSTEM_SIZE=$SYSTEM_MINSIZE
@@ -660,52 +672,17 @@ set_cachesize() {
 
 #------------------------------------------------------------------------------------------------------------------------------
 # shellcheck disable=SC2059
-set_linuxsize() {
-    printf "    Press \033[35m+\033[37m|\033[35m-\033[37m key to change Linux 2 partition size, \033[35m9\033[37m to select\n\n"
-
-    _wait_delay=30
-    local _linux1size=1024
-    while [ $_wait_delay -gt 0 ]; do
-		printf "    Linux 2 partition size: \033[36m${LINUX2_SIZE}M\033[37m         \r"
-		if read -n 1 -t 1 -s A; then
-			_wait_delay=30
-			if [ "${A}" = "+" ]; then
-				let LINUX2_SIZE=LINUX2_SIZE+PARTSIZE_INC
-				let _linux1size=LINUX_SIZE-LINUX2_SIZE
-				if [ ${_linux1size} -lt $LINUX2_MINSIZE ]; then
-					let LINUX2_SIZE=LINUX2_SIZE-PARTSIZE_INC
-				fi
-			elif [ "${A}" = "-" ]; then
-				let LINUX2_SIZE=LINUX2_SIZE-PARTSIZE_INC
-				[ ${LINUX2_SIZE} -lt $LINUX2_MINSIZE ] && LINUX2_SIZE=$LINUX2_MINSIZE
-			elif [ "${A}" = "9" ]; then
-				break
-			fi
-		else
-			let _wait_delay=_wait_delay-1
-		fi
-		printf "\r"
-    done
-}
-#------------------------------------------------------------------------------------------------------------------------------
-
-
-#------------------------------------------------------------------------------------------------------------------------------
-# shellcheck disable=SC2059
 set_oelecsize() {
-    printf "    Press \033[35m+\033[37m|\033[35m-\033[37m key to change swap/aux partition size, \033[35m9\033[37m to select\n\n"
+    printf "    Press \033[35m+\033[37m|\033[35m-\033[37m key to change ${_part6_dlabel} partition size, \033[35m9\033[37m to select\n\n"
 
     _wait_delay=30
     while [ $_wait_delay -gt 0 ]; do
-		if [ "${INST_OELEC}" = "yes" ]; then
-			printf "    openElec partition size: \033[36m${OELEC_SIZE}M\033[37m         \r"
-		else
-			printf "    swap/aux partition size: \033[36m${OELEC_SIZE}M\033[37m         \r"
-		fi
+		printf "    ${_part6_dlabel} partition size: \033[36m${OELEC_SIZE}M\033[37m         \r"
 		if read -n 1 -t 1 -s A; then
 			_wait_delay=30
 			if [ "${A}" = "+" ]; then
 				let OELEC_SIZE=OELEC_SIZE+PARTSIZE_INC
+				[ ${OELEC_SIZE} -eq 136 ] && OELEC_SIZE=$PARTSIZE_INC
 				set_auto_partsize
 				if [ $? -ne 0 ]; then
 					let OELEC_SIZE=OELEC_SIZE-PARTSIZE_INC
@@ -727,69 +704,29 @@ set_oelecsize() {
 #------------------------------------------------------------------------------------------------------------------------------
 
 
-#-----------------------------------------------------
-# caclulate partitions boundaries in block unuts
-get_partsizes() {
-    _userdata_size=$(( $USERDATA_SIZE * 2048))
-    userpart_end=$(( $_userdata_size + $part_start))
-	_system_size=$(( $SYSTEM_SIZE * 2048))
-	_cache_size=$(( $CACHE_SIZE * 2048))
-	syspart_start=$(( $userpart_end + 1))
-	syspart_end=$(( $_system_size + $syspart_start))
-	cachepart_start=$(( $syspart_end + 1))
-	cachepart_end=$(( $_cache_size + $cachepart_start))
-	extpart_start=$(( $cachepart_end + 1))
-}
-#-----------------------------------------------------
-
-
-#----------------------------------------------------------------------------------------
-# Partition and format installation card
-prepare_card() {
-	echo "==== PREPARE CARD ====" >> ${log_file}
-	if [ "${INST_LINUX}" = "yes" ]; then
-		if [ "${INST_LINUX2}" = "yes" ]; then
-			_linux1size=$(( $LINUX_SIZE - $LINUX2_SIZE ))
-			_linux2size=${LINUX2_SIZE}
-		else
-			_linux1size=${LINUX_SIZE}
-			_linux2size=8
-		fi
-	else
-		_linux1size=8
-		_linux2size=8
-	fi
-
-	printf "    Partitioning the card "
-
-	# ---- Erase card -------------------------------------------------------
-	/bin/dd if=/dev/zero of=${DEST_CARD} bs=512 count=${part_start} >> ${log_file} 2>&1
-	sync
-	sleep 1
-	/bin/partprobe -s ${DEST_CARD} >> ${log_file} 2>&1
-	sleep 1
-
-	#---- Make new partition table --------------------------
-	echo -e "o\nw" | /bin/fdisk ${DEST_CARD} >> ${log_file} 2>&1
-	sync
-	sleep 1
-	/bin/partprobe -s ${DEST_CARD} >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		echo "    ERROR creating partition table."
-		return 1
-    fi
-    sleep 1
-
+#------------------------------------------------------------------------------------------------
+create_partitions_full() {
 	# == MULTI BOOT PARTITION LAYOUT ===
 	# userdata
-	# android
-	# system
+	# android system
+	# android cache
 	# extended
-	#   data
-	#   cache
-	#   oelec/swap/aux
+	#   android data
+	#   oelec/linux2
 	#   linux
-	#   linux2
+    _userdata_size=$(( $USERDATA_SIZE * 2048 ))
+	_system_size=$(( $SYSTEM_SIZE * 2048 ))
+	_cache_size=$(( $CACHE_SIZE * 2048 ))
+    userpart_end=$(( $_userdata_size + $part_start - 1 ))
+	syspart_start=$(( $userpart_end + 1))
+	syspart_end=$(( $syspart_start + $_system_size - 1 ))
+	cachepart_start=$(( $syspart_end + 1 ))
+	cachepart_end=$(( $cachepart_start + $_cache_size - 1 ))
+	extpart_start=$(( $cachepart_end + 1))
+
+	dd if=/dev/zero of=${DEST_CARD} bs=512 seek=${extpart_start} count=131072 >> ${log_file} 2>&1
+	sync
+
 	echo "n
 p
 1
@@ -819,16 +756,44 @@ n
 +${OELEC_SIZE}M
 n
 
-+${_linux1size}M
-n
-
-+${_linux2size}M
++${LINUX_SIZE}M
 w" | fdisk ${DEST_CARD} >> ${log_file} 2>&1
 
 	if [ $? -ne 0 ]; then
 		printf "    fdisk ERROR "
 		return 1
 	fi
+return 0
+}
+#------------------------------------------------------------------------------------------------
+
+#----------------------------------------------------------------------------------------
+# Partition and format installation card
+prepare_card() {
+	echo "==== PREPARE CARD ====" >> ${log_file}
+
+	printf "    Partitioning the card "
+
+	# ---- Erase card -------------------------------------------------------
+	/bin/dd if=/dev/zero of=${DEST_CARD} bs=512 count=${part_start} >> ${log_file} 2>&1
+	sync
+	sleep 1
+	/bin/partprobe -s ${DEST_CARD} >> ${log_file} 2>&1
+	sleep 1
+
+	#---- Make new partition table --------------------------
+	echo -e "o\nw" | /bin/fdisk ${DEST_CARD} >> ${log_file} 2>&1
+	sync
+	sleep 1
+	/bin/partprobe -s ${DEST_CARD} >> ${log_file} 2>&1
+	if [ $? -ne 0 ]; then
+		echo "    ERROR creating partition table."
+		return 1
+    fi
+    sleep 1
+
+	create_partitions_full
+	[ $? -ne 0 ] && return 1
 
 	sleep 2
 	/bin/partprobe -s ${DEST_CARD} >> ${log_file} 2>&1
@@ -879,13 +844,13 @@ w" | fdisk ${DEST_CARD} >> ${log_file} 2>&1
 
 		# === data ===================================================
 		printf "\033[36mdata\033[37m... "
-		dd if=/dev/zero of=${DEST_CARD}p5 bs=512 count=2048 >> ${log_file} 2>&1
+		dd if=/dev/zero of=${DEST_CARD}p${ADATA_PART} bs=512 count=2048 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "ERROR"
 			return 1
 		fi
 		sync
-		mkfs.ext4 -L ${label_pref}data ${DEST_CARD}p5 >> ${log_file} 2>&1
+		mkfs.ext4 -L ${label_pref}data ${DEST_CARD}p${ADATA_PART} >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "mkfs ERROR"
 			return 1
@@ -895,13 +860,13 @@ w" | fdisk ${DEST_CARD} >> ${log_file} 2>&1
 
 		# === cache =================================================================
 		printf "\033[36mcache\033[37m... "
-		dd if=/dev/zero of=${DEST_CARD}p3 bs=512 count=2048 >> ${log_file} 2>&1
+		dd if=/dev/zero of=${DEST_CARD}p${ACACHE_PART} bs=512 count=2048 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "ERROR"
 			return 1
 		fi
 		sync
-		mkfs.ext4 -L ${label_pref}cache ${DEST_CARD}p3 >> ${log_file} 2>&1
+		mkfs.ext4 -L ${label_pref}cache ${DEST_CARD}p${ACACHE_PART} >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "mkfs ERROR"
 			return 1
@@ -910,16 +875,16 @@ w" | fdisk ${DEST_CARD} >> ${log_file} 2>&1
 		sleep 1
 	fi
 
-	if [ "$INST_OELEC" = "yes" ]; then
+	if [ "$INST_OELEC" = "yes" ] || [ "${INST_LINUX2}" = "yes" ]; then
 		printf "\033[36moelec\033[37m... "
-		# === swap/aux ==============================================
+		# === OpenElec/Linux2 ==============================================
 		dd if=/dev/zero of=${DEST_CARD}p6 bs=512 count=2048 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "ERROR"
 			return 1
 		fi
 		sync
-		mkfs.ext4 -L ${label_pref}aux ${DEST_CARD}p6 >> ${log_file} 2>&1
+		mkfs.ext4 -L ${label_pref}${_part6_label} ${DEST_CARD}p6 >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			echo "mkfs ERROR"
 			return 1
@@ -941,28 +906,6 @@ w" | fdisk ${DEST_CARD} >> ${log_file} 2>&1
 			mkfs.btrfs -f -L ${label_pref}linux ${DEST_CARD}p7 >> ${log_file} 2>&1
 		else
 			mkfs.ext4 -L ${label_pref}linux ${DEST_CARD}p7 >> ${log_file} 2>&1
-		fi
-		if [ $? -ne 0 ]; then
-			echo "mkfs ERROR"
-			return 1
-		fi
-		sync
-		sleep 1
-	fi
-
-	if [ "${INST_LINUX2}" = "yes" ]; then
-		printf "\033[36mlinux2\033[37m... "
-		# === linux =========================================================================
-		dd if=/dev/zero of=${DEST_CARD}p8 bs=512 count=2048 >> ${log_file} 2>&1
-		if [ $? -ne 0 ]; then
-			echo "ERROR"
-			return 1
-		fi
-		sync
-		if [ "${LINUX_FSTYPE}" = "btrfs" ] ; then
-			mkfs.btrfs -f -L ${label_pref}linux ${DEST_CARD}p8 >> ${log_file} 2>&1
-		else
-			mkfs.ext4 -L ${label_pref}linux ${DEST_CARD}p8 >> ${log_file} 2>&1
 		fi
 		if [ $? -ne 0 ]; then
 			echo "mkfs ERROR"
@@ -1116,7 +1059,12 @@ install_multi_sel() {
 	fi
 	cp /multiboot/boot.ini.multi /mnt2/multiboot >> ${log_file} 2>&1
 	[ $? -ne 0 ] && return 1
-	cp /multiboot/boot.ini.multi /mnt2/boot.ini >> ${log_file} 2>&1
+	if [ "${O_BOARD}" = "C2" ]; then
+		if [ "${label_pref}" = "em" ]; then
+			sed -i "s/setenv CARD_TYPE SD/setenv CARD_TYPE EMMC/g" /mnt2/multiboot/boot.ini.multi
+		fi
+	fi
+	cp /mnt2/multiboot/boot.ini.multi /mnt2/boot.ini >> ${log_file} 2>&1
 	[ $? -ne 0 ] && return 1
 	cp /multiboot/${ODROID_IMAGE}.multi /mnt2/multiboot >> ${log_file} 2>&1
 	[ $? -ne 0 ] && return 1
@@ -1124,6 +1072,12 @@ install_multi_sel() {
 	[ $? -ne 0 ] && return 1
 	cp /multiboot/*.dtb.multi /mnt2/multiboot >> ${log_file} 2>&1
 	[ $? -ne 0 ] && return 1
+
+	if [ "${label_pref}" = "sd" ]; then
+		touch /mnt2/THIS_IS_SDCARD >> ${log_file} 2>&1
+	else
+		touch /mnt2/THIS_IS_EMMC >> ${log_file} 2>&1
+	fi
 
 	return 0
 }
@@ -1197,6 +1151,7 @@ unpack_android() {
 	echo "==== UNPACK ANDROID ====" >> ${log_file}
 	mkdir /run/inst >> ${log_file} 2>&1
 	mkdir /run/inst/android >> ${log_file} 2>&1
+	rm -rf /run/inst/android/* >> ${log_file} 2>&1
 
 	printf "    Extracting Android partition images, please wait ... "
 
@@ -1226,8 +1181,7 @@ unpack_android() {
 		fi
 		andro_source="${source_mount}/android/${_name}"
 		cd /
-	else
-		if [ -f ${source_mount}/update.zip ]; then
+	elif [ -f ${source_mount}/update.zip ]; then
 			mkdir ${source_mount}/android >> ${log_file} 2>&1
 			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			# unzip, dont make directories
@@ -1238,10 +1192,9 @@ unpack_android() {
 			fi
 			sync
 			andro_source="${source_mount}/android"
-		else
-			echo "ERROR: archive file not found."
-			return 1
-		fi
+	else
+		echo "ERROR: archive file not found."
+		return 1
 	fi
 	sync
 	echo "OK."
@@ -1249,12 +1202,28 @@ unpack_android() {
 	printf "    Preparing Android partition images ...\n"
 
 	if [ ! -f ${andro_source}/${ODROID_IMAGE} ]; then
-		echo "    KERNEL (%s) not found!" "${ODROID_IMAGE}"
-		sleep 2
-		return 1
+		echo "    KERNEL (${ODROID_IMAGE}) not found!"
+		if [ "${O_BOARD}" = "XU" ]; then
+			if [ -f ${andro_source}/zImage-dtb ]; then
+				mv ${andro_source}/zImage-dtb ${andro_source}/${ODROID_IMAGE} >> ${log_file} 2>&1
+				if [ $? -ne 0 ]; then
+					echo "    ERROR renaming zImage-dtb"
+					sleep 4
+					return 1
+				fi
+				echo "    KERNEL zImage-dtb found, RENAMED to ${ODROID_IMAGE}."
+				sleep 4
+			else
+				sleep 4
+				return 1
+			fi
+		else
+			sleep 4
+			return 1
+		fi
     fi
 	if [ "${O_BOARD}" = "C2" ] && [ ! -f ${andro_source}/${ODROID_DTB} ]; then
-		echo "    %s not found!" "${ODROID_DTB}"
+		echo "    ${ODROID_DTB} not found!"
 		sleep 2
 		return 1
     fi
@@ -1296,7 +1265,7 @@ unpack_android() {
 			return 1
 		fi
     fi
-	
+
     # All needed images and files are present, get sizes
 	_ramfs_free=$(df | grep tmpfs | awk '{print $4}')
 	_ramfs_free=$(( $_ramfs_free / 1024 - 100 ))
@@ -1355,172 +1324,189 @@ unpack_android() {
 }
 #----------------------------------------------------------------------------
 
-
-#---------------------------------------------------------------------------------------------
-change_android_fstab() {
-    # Prepare fstab for changed partition layout
-    if [ -f /mnt2/${1} ]; then
-		if [ "${O_BOARD}" = "C2" ]; then
-			# Change data partition number (4 -> 5)
-			cat /mnt2/${1} | sed "s/\/dev\/block\/mmcblk0p4/\/dev\/block\/mmcblk0p5/g" > _fstab_
-			cp _fstab_ /mnt2/${1}
-			rm _fstab_
-		else
-			# Change data partition number (3 -> 5)
-			cat /mnt2/${1} | sed "s/\/dev\/block\/mmcblk0p4/\/dev\/block\/mmcblk0p5/g" > _fstab_
-			cp _fstab_ /mnt2/${1}
-			rm _fstab_
-			# Change cache partition number (4 -> 3)
-			cat /mnt2/${1} | sed "s/\/dev\/block\/mmcblk0p4/\/dev\/block\/mmcblk0p3/g" > _fstab_
-			cp _fstab_ /mnt2/${1}
-			rm _fstab_
-		fi
-    fi
-}
-#---------------------------------------------------------------------------------------------
-
-#------------------------------------------------------------
-prepare_android_multi() {
-	echo "==== PREPARE ANDROID FOR MULTIBOOT ====" >> ${log_file}
-    # Prepare fstab for changed partition layout
-	change_android_fstab "${ODROID_FSTAB}"
-	if [ -f /mnt2/${ODROID_FSTAB}.sdcard ]; then
-		change_android_fstab "${ODROID_FSTAB}.sdcard"
-	elif [ -f /mnt2/${ODROID_FSTAB}.sdboot ]; then
-		change_android_fstab "${ODROID_FSTAB}.sdboot"
-	fi
-    return 0
-}
-#------------------------------------------------------------
-
-
 #----------------------------------------------------------------------------------------------------------------
 install_android() {
-	echo "==== INSTALL ANDROID ====" >> ${log_file}
-	printf "\n    \033[33mInstalling \033[1mAndroid\033[22m\033[37m"
+	if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+		echo "==== UPGRADING ANDROID ====" >> ${log_file}
+		printf "\n    \033[33mUPGRADING \033[1mAndroid\033[22m\033[37m"
+	else
+		echo "==== INSTALL ANDROID ====" >> ${log_file}
+		printf "\n    \033[33mInstalling \033[1mAndroid\033[22m\033[37m"
+	fi
     if [ -d ${source_mount}/backup/android/system ]; then
 		printf " (from backup)\n"
 	else
 		printf "\n"
 	fi
 
-    mkdir /mnt1 >> ${log_file} 2>&1
-    mkdir /mnt2 >> ${log_file} 2>&1
+	mkdir /mnt1 >> ${log_file} 2>&1
+	mkdir /mnt2 >> ${log_file} 2>&1
 
-    # === Copy system partition ===
-    printf "    Installing \033[36msystem\033[37m ... "
-    # mount source
+	# === Copy system partition ===
+	printf "    Installing \033[36msystem\033[37m ... "
+	# mount source
 	mount -t ext4 -o ro,loop ${andro_dest}/system.raw.img /mnt1 >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
 		echo "ERROR mounting system image."
 		return 1
 	fi
 	# mount destination
-    mount -t ext4 ${DEST_CARD}p2 /mnt2 >> ${log_file} 2>&1
-    if [ $? -ne 0 ]; then
-        umount /mnt1 >> ${log_file} 2>&1
-        echo "ERROR mounting system partition."
-        return 1
-    fi
-    sleep 1
-    rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
-    if [ $? -ne 0 ]; then
-        umount /mnt1 >> ${log_file} 2>&1
-        umount /mnt2 >> ${log_file} 2>&1
-        echo "ERROR copying system."
-        return 1
-    fi
-    sync
+	if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+		mount -t ext4 ${_dest_system} /mnt2 >> ${log_file} 2>&1
+	else
+		mount -t ext4 ${DEST_CARD}p2 /mnt2 >> ${log_file} 2>&1
+	fi
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		echo "ERROR mounting system partition."
+		return 1
+	fi
+	sleep 1
 
-    prepare_android_multi
+	if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+		rm -rfd /mnt2/* >> ${log_file} 2>&1
+	fi
+
+	rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
+	if [ $? -ne 0 ]; then
+		umount /mnt1 >> ${log_file} 2>&1
+		umount /mnt2 >> ${log_file} 2>&1
+		echo "ERROR copying system."
+		return 1
+	fi
+	sync
+
+	echo "==== PREPARE ANDROID FOR MULTIBOOT ====" >> ${log_file}
+    # === Prepare fstab for changed partition layout ===
+    if [ -f /mnt2/${ODROID_FSTAB} ]; then
+		if [ "${O_BOARD}" = "C2" ]; then
+			# Change data partition number (4 -> 5)
+			cat /mnt2/${ODROID_FSTAB} | sed "s/\/dev\/block\/mmcblk0p4/\/dev\/block\/mmcblk0p5/g" > _fstab_
+			cp _fstab_ /mnt2/${ODROID_FSTAB}
+			rm _fstab_
+		else
+			cp /mnt2/${ODROID_FSTAB} /mnt2/${ODROID_FSTAB}.original
+			cp /mnt2/${ODROID_FSTAB}.sdboot /mnt2/${ODROID_FSTAB}.sdboot.original
+			# Change data partition number (3 -> 5)
+			sed -i "s/\/dev\/block\/mmcblk0p3/\/dev\/block\/mmcblk0p5/g" /mnt2/${ODROID_FSTAB}
+			# Change cache partition number (4 -> 3)
+			sed -i "s/\/dev\/block\/mmcblk0p4/\/dev\/block\/mmcblk0p3/g" /mnt2/${ODROID_FSTAB}
+
+			cp /mnt2/${ODROID_FSTAB} /mnt2/${ODROID_FSTAB}.other
+			sed -i "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" /mnt2/${ODROID_FSTAB}.other
+			sed -i "s/12200000.dwmmc0\/mmc_host\/mmc0/12200000.dwmmcX\/mmc_host\/mmcX/g" /mnt2/${ODROID_FSTAB}.other
+			sed -i "s/12220000.dwmmc2\/mmc_host\/mmc1/12200000.dwmmc0\/mmc_host\/mmc0/g" /mnt2/${ODROID_FSTAB}.other
+			sed -i "s/12200000.dwmmcX\/mmc_host\/mmcX/12220000.dwmmc2\/mmc_host\/mmc1/g" /mnt2/${ODROID_FSTAB}.other
+
+			sed -i "s/sdcard0:1,noemulatedsd/sdcard1:1,noemulatedsd/g" /mnt2/${ODROID_FSTAB}
+			sed -i "s/sdcard1:auto/sdcard0:auto/g" /mnt2/${ODROID_FSTAB}
+			cp /mnt2/${ODROID_FSTAB} /mnt2/${ODROID_FSTAB}.orig
+		fi
+	else
+		echo "ERROR: ${ODROID_FSTAB} not found"
+		umount /mnt1 >> ${log_file} 2>&1
+		umount /mnt2 >> ${log_file} 2>&1
+		return 1
+    fi
+
+	if [ ! "${UPGRADE_ANDROID}" = "yes" ]; then
+		if [ "${label_pref}" = "sd" ]; then
+			touch /mnt2/THIS_IS_SDCARD >> ${log_file} 2>&1
+		else
+			touch /mnt2/THIS_IS_EMMC >> ${log_file} 2>&1
+		fi
+	fi
 
     umount /mnt1 >> ${log_file} 2>&1
     umount /mnt2 >> ${log_file} 2>&1
     sleep 1
     printf "OK  "
 
-    # === Copy data partition ===
-	printf "\033[36mdata\033[37m ... "
-    # mount source
-	mount -t ext4 -o ro,loop ${andro_dest}/data.raw.img /mnt1 >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		echo "ERROR mounting data image."
-		return 1
-	fi
-	# mount destination
-	mount -t ext4 ${DEST_CARD}p5 /mnt2 >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		umount /mnt1 >> ${log_file} 2>&1
-		echo "ERROR mounting data partition."
-		return 1
-	fi
-	sleep 1
+	if [ ! "${UPGRADE_ANDROID}" = "yes" ]; then
+		# === Copy data partition ===
+		printf "\033[36mdata\033[37m ... "
+		# mount source
+		mount -t ext4 -o ro,loop ${andro_dest}/data.raw.img /mnt1 >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR mounting data image."
+			return 1
+		fi
+		# mount destination
+		mount -t ext4 ${DEST_CARD}p${ADATA_PART} /mnt2 >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			umount /mnt1 >> ${log_file} 2>&1
+			echo "ERROR mounting data partition."
+			return 1
+		fi
+		sleep 1
 
-	rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
+		rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			umount /mnt1 >> ${log_file} 2>&1
+			umount /mnt2 >> ${log_file} 2>&1
+			echo "ERROR copying userdata."
+			return 1
+		fi
+		sync
 		umount /mnt1 >> ${log_file} 2>&1
 		umount /mnt2 >> ${log_file} 2>&1
-		echo "ERROR copying userdata."
-		return 1
+		sleep 1
+		printf "OK  "
+    else
+        if [ "${_erase_data}" = "yes" ]; then
+            printf "\033[36merasing data\033[37m ... "
+            # mount destination
+    		mount -t ext4 ${_dest_data} /mnt2 >> ${log_file} 2>&1
+    		if [ $? -ne 0 ]; then
+    			printf "ERROR mounting  "
+            else
+                rm -rf /mnt2/* >> ${log_file} 2>&1
+                if [ $? -ne 0 ]; then
+                    printf "ERROR erasing  "
+                else
+                    printf "OK  "
+                fi
+    		fi
+        fi
 	fi
-	sync
 
-	umount /mnt1 >> ${log_file} 2>&1
-	umount /mnt2 >> ${log_file} 2>&1
-	sleep 1
-	printf "OK  "
-
-    # === Copy cache partition ===
+	# === Copy cache partition ===
 	printf "\033[36mcache\033[37m ... "
-    # mount source
-	mount -t ext4 -o ro,loop ${andro_dest}/cache.raw.img /mnt1 >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		echo "ERROR mounting cache image."
-		return 1
-	fi
 	# mount destination
-	mount -t ext4 ${DEST_CARD}p3 /mnt2 >> ${log_file} 2>&1
+	if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+		mount -t ext4 ${_dest_cache} /mnt2 >> ${log_file} 2>&1
+	else
+		mount -t ext4 ${DEST_CARD}p${ACACHE_PART} /mnt2 >> ${log_file} 2>&1
+	fi
 	if [ $? -ne 0 ]; then
 		umount /mnt1 >> ${log_file} 2>&1
 		echo "ERROR mounting cache partition."
 		return 1
 	fi
 	sleep 1
-	rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		umount /mnt1 >> ${log_file} 2>&1
-		umount /mnt2 >> ${log_file} 2>&1
-		echo "ERROR copying cache."
-		return 1
+	if [ ! "${UPGRADE_ANDROID}" = "yes" ]; then
+		# mount source
+		mount -t ext4 -o ro,loop ${andro_dest}/cache.raw.img /mnt1 >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR mounting cache image."
+			return 1
+		fi
+
+		rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			umount /mnt1 >> ${log_file} 2>&1
+			umount /mnt2 >> ${log_file} 2>&1
+			echo "ERROR copying cache."
+			return 1
+		fi
+	else
+		rm -rfd /mnt2/* >> ${log_file} 2>&1
 	fi
 	sync
 	umount /mnt1 >> ${log_file} 2>&1
 	umount /mnt2 >> ${log_file} 2>&1
 	sleep 1
-	printf "OK  "
-
-    # Install kernel
-    printf "\033[36mkernel\033[37m ... "
-    if [ "${O_BOARD}" = "xC2" ]; then
-		dd if=${andro_dest}/${ODROID_DTB} of=${DEST_CARD} seek=1504 >> ${log_file} 2>&1
-		if [ $? -ne 0 ]; then
-			echo "ERROR installing Android kernel (DTB)."
-			return 1
-		else
-			dd if=${andro_dest}/${ODROID_IMAGE} of=${DEST_CARD} seek=1632 >> ${log_file} 2>&1
-		fi
-    elif [ "${O_BOARD}" = "xXU" ]; then
-		dd if=${andro_dest}/${ODROID_IMAGE} of=${DEST_CARD} seek=1263 >> ${log_file} 2>&1
-	else
-		printf "not needed "
-	fi
-	if [ $? -ne 0 ]; then
-		echo "ERROR installing Android kernel."
-		return 1
-	fi
-	echo "OK"
-    sync
-    sleep 1
+	printf "OK\n"
 
 	# Prepare for multiboot
 	printf "    Preparing for multi boot ... "
@@ -1532,17 +1518,31 @@ install_android() {
 	fi
 	sleep 1
 
-	mkdir /mnt2/multiboot >> ${log_file} 2>&1
+	if [ ! "${UPGRADE_ANDROID}" = "yes" ]; then
+		mkdir /mnt2/multiboot >> ${log_file} 2>&1
 
-    if [ "${A_FROMDIR}" = "yes" ]; then
-        cp -rf ${andro_dest}/* /mnt2 >> ${log_file} 2>&1
-    fi
+		if [ "${A_FROMDIR}" = "yes" ]; then
+			cp -rf ${andro_dest}/userdir/* /mnt2 >> ${log_file} 2>&1
+		fi
 
-	cp /multi/boot.ini.android /mnt2/multiboot >> ${log_file} 2>&1
-	[ ! -f /mnt2/multiboot/boot.ini.android ] && print "ini file? "
+		cp /multi/boot.ini.android /mnt2/multiboot >> ${log_file} 2>&1
+		[ ! -f /mnt2/multiboot/boot.ini.android ] && print "ini file? "
+	elif [ ! -f /mnt2/multiboot/boot.ini.android ]; then
+		cp /multi/boot.ini.android /mnt2/multiboot >> ${log_file} 2>&1
+		[ ! -f /mnt2/multiboot/boot.ini.android ] && print "ini file? "
+	fi
 
-	cp ${andro_dest}/${ODROID_DTB} /mnt2/multiboot/${ODROID_DTB}.android >> ${log_file} 2>&1
-	cp ${andro_dest}/${ODROID_IMAGE} /mnt2/multiboot/${ODROID_IMAGE}.android >> ${log_file} 2>&1
+	cp -f ${andro_dest}/${ODROID_DTB} /mnt2/multiboot/${ODROID_DTB}.android >> ${log_file} 2>&1
+	cp -f ${andro_dest}/${ODROID_IMAGE} /mnt2/multiboot/${ODROID_IMAGE}.android >> ${log_file} 2>&1
+	if [ "${O_BOARD}" = "XU" ]; then
+		cp -f ${andro_dest}/${ODROID_IMAGE} /mnt2/multiboot/${ODROID_IMAGE}.andro_1 >> ${log_file} 2>&1
+		# PATCH zImage !!
+		sed -i 's/mmcblk0p2/mmcblk1p2/g' /mnt2/multiboot/${ODROID_IMAGE}.andro_1 >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR PATCHING Android kernel."
+			return 1
+		fi
+	fi
 
 	sync
 	umount /mnt2 >> ${log_file} 2>&1
@@ -1670,7 +1670,7 @@ install_linux() {
     local _linpart="p7"
     local _linsufix=""
     if [ "${1}" = "linux2.img" ]; then
-		_linpart="p8"
+		_linpart="p6"
 		_linsufix="2"
 	fi
 
@@ -1882,7 +1882,7 @@ install_oelec() {
     cd /
 
 	cp /multi/boot.ini.oelec /mnt2/multiboot
-	cat /mnt2/multiboot/boot.ini.oelec | sed "s/boot=LABEL=userdata disk=LABEL=oelec/boot=LABEL=${label_pref}userdata disk=LABEL=${label_pref}aux/g" > _bsel_
+	cat /mnt2/multiboot/boot.ini.oelec | sed "s/boot=LABEL=userdata disk=LABEL=oelec/boot=LABEL=${label_pref}userdata disk=LABEL=${label_pref}${_part6_label}/g" > _bsel_
 	cp _bsel_ /mnt2/multiboot/boot.ini.oelec
 	rm _bsel_
 	sync
@@ -1914,6 +1914,95 @@ check_inst() {
 # ====================================================================================================
 # START
 # ====================================================================================================
+
+#=======================================================================
+if [ "${UPGRADE_ANDROID}" = "yes" ]; then
+	echo "==== UNPACK AND DECOMPRESS ANDROID IMAGES ====" >> ${log_file}
+	print_header
+	printf "\n    ANDROID UPGRADE\n\n"
+
+	if [ ! -b /dev/disk/by-label/sdsystem ] && [ ! -b /dev/disk/by-label/emsystem ]; then
+		printf "    \033[35mANDROID not installed on any card!\033[37m\n"
+		exit_script
+	fi
+
+	_num_androinst=1
+	if [ -b /dev/disk/by-label/sdystem ] && [ -b /dev/disk/by-label/emystem ]; then
+		_num_androinst=2
+	fi
+	if [ $_num_androinst -eq 2 ]; then
+		printf "    \033[36mAdndroid installation on two cards detected\033[37m\n\n"
+		printf "    \033[36m\033[1m1\033[22m Android on SDcard\033[37m\n"
+		printf "    \033[36m\033[1m2\033[22m Android on EMMC\033[37m\n\n"
+		printf "    \033[36mWhich one to upgrade ? (pres \033[1mE\033[22m to abort)\033[36m"
+		A="x"
+		while true; do
+			if read -n 1 -t 1 -s A; then
+				if [ "${A}" = "1" ]; then
+					_dest_system="/dev/disk/by-label/sdystem"
+					_dest_cache="/dev/disk/by-label/sdcache"
+                    _dest_data="/dev/disk/by-label/sddata"
+					break
+				elif [ "${A}" = "2" ]; then
+					_dest_system="/dev/disk/by-label/emystem"
+					_dest_cache="/dev/disk/by-label/emcache"
+                    _dest_data="/dev/disk/by-label/emdata"
+					break
+				elif [ "${A}" = "E" ]; then
+					exit 0
+				fi
+			fi
+		done
+	else
+		if [ -b /dev/disk/by-label/sdystem ]; then
+			_dest_system="/dev/disk/by-label/sdystem"
+			_dest_cache="/dev/disk/by-label/sdcache"
+            _dest_data="/dev/disk/by-label/sddata"
+		else
+			_dest_system="/dev/disk/by-label/emystem"
+			_dest_cache="/dev/disk/by-label/emcache"
+            _dest_data="/dev/disk/by-label/emdata"
+		fi
+    fi
+    printf "\n    \033[36mDo you want to erase data partition ?\033[37m\n"
+    printf "    \033[36mPress \033[1mY\033[22m to erase, \033[1mN\033[22m to leave it \033[36m"
+    A="x"
+    while true; do
+        if read -n 1 -t 1 -s A; then
+            if [ "${A}" = "Y" ]; then
+                _erase_data="yes"
+                break
+            elif [ "${A}" = "N" ]; then
+                _erase_data="no"
+                break
+            fi
+        fi
+    done
+
+	# Unpack and decompress android install images to RAM or disk
+	unpack_android
+	if [ $? -ne 0 ]; then
+		printf "    \033[35mANDROID cannot be upgraded!\033[37m\n"
+		rm -rf rm ${source_mount}/android/* >> ${log_file} 2>&1
+		rmdir rm ${source_mount}/android >> ${log_file} 2>&1
+		exit_script
+	fi
+	rm -rf rm ${source_mount}/android/* >> ${log_file} 2>&1
+	rmdir rm ${source_mount}/android >> ${log_file} 2>&1
+
+	install_android
+	if [ $? -ne 0 ]; then
+		printf "    \033[35mERROR UPGRADING ANDROID!\033[37m\n"
+	else
+		printf "    \033[36mAndroid UPGRADED\033[37m\n"
+	fi
+
+	rm -rf /run/inst/android/* >> ${log_file} 2>&1
+	rmdir /run/inst/android >> ${log_file} 2>&1
+
+	exit_script
+fi
+#=======================================================================
 
 set_cardsize
 print_header
@@ -2077,10 +2166,6 @@ if [ "${INST_ANDROID}" != "yes" ] && [ "${INST_LINUX}" != "yes" ] && [ "${INST_O
 fi
 # --------------------------------------------------------------------------------------------------------------------
 
-# --- Set partitions sizes ---------
-get_partsizes
-
-sleep 1
 print_header
 
 # --- Partition and format the card ----------------------------

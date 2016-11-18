@@ -7,9 +7,10 @@ fi
 
 usage() {
 	printf "\n\033[33m"
-    printf "USAGE: prepare_selfinst dest board [big]\n"
+    printf "USAGE: prepare_selfinst dest board [emmc]\n"
     printf "       \033[1mdest\033[22m   destination, block device (/dev/sdX) or image name\n"
     printf "       \033[1mboard\033[22m  Odroid board type: \033[1mc2\033[22m or \033[1mxu4\033[22m\n"
+    printf "       \033[1memmc\033[22m  Prepare EMMC card, only valid for Odroid-C2, default is SD\n"
 	printf "\033[37m\n"
 }
 
@@ -41,10 +42,19 @@ if [ ! "${2}" = "xu4" ] && [ ! "${2}" = "c2" ]; then
     exit 1
 fi
 
+emmc_install=""
+emmc_disp=""
 if [ "${2}" = "c2" ]; then
 	part_start=65536       # RESERVE 32MB AT CARD START
 	o_device="c2"
 	src_dir="C2"
+	if [ "${3}" = "emmc" ] || [ "${3}" = "EMMC" ]; then
+		emmc_install="yes"
+		emmc_disp="(EMMC card)"
+	else
+		emmc_install="no"
+		emmc_disp="(SD card)"
+	fi
 else
 	part_start=131072      # RESERVE 64MB AT CARD START
 	o_device="xu4"
@@ -79,7 +89,7 @@ echo "========================================================"
 echo "= Preparing Odroid MultiBoot selfinstall sd card/image ="
 echo "========================================================"
 printf "\033[22m\033[37m\n"
-printf "\033[33mPreparing for \033[1mOdroid-%s\033[22m\033[37m\n\n" "${o_device}"
+printf "\033[33mPreparing for \033[1mOdroid-%s %s\033[22m\033[37m\n\n" "${o_device}" "${emmc_disp}"
 
 # =================
 # Check destination
@@ -252,7 +262,14 @@ fi
 if [ ${o_device} = "xu4" ]; then
 	cp ${src_dir}/multiboot/boot.scr.multi _mnt/boot.scr > /dev/null 2>&1
 else
-	cp ${src_dir}/multiboot/boot.ini.multi _mnt/boot.ini > /dev/null 2>&1
+	if [ "${emmc_install}" = "yes" ]; then
+		sed -i "s/setenv CARD_TYPE SD/setenv CARD_TYPE EMMC/g" _mnt/multiboot/boot.ini.multi > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			image_error_exit "ERROR modifying multiboot ini file on ${sdcard}1."
+			exit 1
+		fi
+	fi
+	cp _mnt/multiboot/boot.ini.multi _mnt/boot.ini > /dev/null 2>&1
 fi
 if [ $? -ne 0 ]; then
     image_error_exit "ERROR installing multiboot ini file on ${sdcard}1."

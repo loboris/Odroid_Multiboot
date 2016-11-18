@@ -92,6 +92,13 @@ setenv nographics "0"
 
 ###########################################
 
+# =================================================
+# = RESTORE boot.ini FOR MULTIBOOT, DO NOT CHANGE =
+# =================================================
+fatload mmc 0:1 0x60000000 multiboot/boot.ini.multi
+fatwrite mmc 0:1 0x60000000 boot.ini ${filesize}
+# =================================================
+
 # Boot Arguments
 setenv bootargs "root=LABEL=XXlinux rootwait ro ${condev} no_console_suspend hdmimode=${m} m_bpp=${m_bpp} vout=${vout} fsck.repair=yes net.ifnames=0 elevator=noop disablehpd=${hpd}"
 
@@ -113,12 +120,5 @@ if test "${nographics}" = "1"; then fdt rm /reserved-memory; fdt rm /aocec; fi
 if test "${nographics}" = "1"; then fdt rm /meson-fb; fdt rm /amhdmitx; fdt rm /picdec; fdt rm /ppmgr; fi
 if test "${nographics}" = "1"; then fdt rm /meson-vout; fdt rm /mesonstream; fdt rm /meson-fb; fi
 if test "${nographics}" = "1"; then fdt rm /deinterlace; fdt rm /codec_mm; fi
-
-# =================================================
-# = RESTORE boot.ini FOR MULTIBOOT, DO NOT CHANGE =
-# =================================================
-fatload mmc 0:1 0x60000000 multiboot/boot.ini.multi
-fatwrite mmc 0:1 0x60000000 boot.ini ${filesize}
-# =================================================
 
 booti ${loadaddr} ${initrd_loadaddr} ${dtb_loadaddr}

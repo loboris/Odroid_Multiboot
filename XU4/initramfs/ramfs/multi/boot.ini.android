@@ -84,23 +84,31 @@ setenv edid "0"
  
 setenv hpd "1"
  
-setenv led_blink        "1"
+setenv led_blink "1"
  
-setenv bootargs     "fb_x_res=${fb_x_res} fb_y_res=${fb_y_res} hdmi_phy_res=${hdmi_phy_res} edid=${edid} hpd=${hpd} led_blink=${led_blink}"
+setenv bootargs "fb_x_res=${fb_x_res} fb_y_res=${fb_y_res} hdmi_phy_res=${hdmi_phy_res} edid=${edid} hpd=${hpd} led_blink=${led_blink}"
 
 # ========================================================
-# = RESTORE boot.scr FOR MULTIBOOT, DO NOT CHANGE        =
+# =     !! DO NOT CHANGE ANYTHING BELOW THIS LINE !!     =
 # ========================================================
+# =    RESTORE boot.scr FOR MULTIBOOT, DO NOT CHANGE     =
+# ========================================================
+setenv boot_mmc_type "unknown"
+setenv mmc_boot_device 9
+
 mmc list
 mmc dev
 
-setenv change_osdev no;
+setenv akernel zImage
+setenv change_osdev no
+setenv bootdev "0:1"
 
-setenv bootdev "0:1";
 if test "${mmc_boot_device}" = "0"; then
   setenv bootdev "0:1";
+  setenv boot_mmc_type "${boot_mmc0_type}";
 elif test "${mmc_boot_device}" = "1"; then
   setenv bootdev "1:1";
+  setenv boot_mmc_type "${boot_mmc1_type}";
 fi
 
 setenv os_dev "${bootdev}";
@@ -113,7 +121,9 @@ if test "${change_osdev}" = "yes"; then
 fi
 # ========================================================
 
-fatload mmc ${os_dev} 40008000 /multiboot/zImage.android
+echo "**** BOOT FROM: [${bootdev}] [${mmc_boot_device}:${boot_mmc_type}] TO: [${os_dev}] KERNEL: ${akernel} ***"
+
+fatload mmc ${os_dev} 40008000 ${akernel}
 
 # === RESTORE MULTIBOOT SCRIPT ===========================
 fatload mmc ${bootdev} 0x60000000 /multiboot/boot.scr.multi

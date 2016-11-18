@@ -19,7 +19,7 @@ setenv DEFAULT_OS "1"
 # !! DO NOT CHANGE !!                                           =                                        
 # (will be changed automaticaly when installed on EMMC)         =
 # ------------------------------------------------------------- =
-setenv CARD_TYPE "SD"
+setenv CARD_TYPE SD
 # ===============================================================
 
 
