@@ -189,7 +189,7 @@ sleep 1
 
 [ ! $BOOTDELAY -gt 4 ] &&  BOOTDELAY=5
 
-export SCRIPT_VERSION="v2.2"
+export SCRIPT_VERSION="v2.3"
 export O_BOARD="OD"
 export ODROID_DTB="odroid.dtb"
 export ODROID_FSTAB="fstab.odroid"
@@ -256,13 +256,12 @@ if [ -f /ODROID_C2 ]; then
 	ODROID_ASYSTEMIMAGE="rootsystem.img"
 	BKP_PREFIX="C2"
 	BOOT_CARDDEV="0"
-	if [ -b /dev/mmcblk1p1 ]; then
+	BOOT_CARDTYPE="${CARD_TYPE}"
+	if [ -b /dev/mmcblk1 ]; then
 		BOOT_CARDTYPE="EMMC"
 		NUMCARDS="2"
 		OTHER_CARDDEV="1"
 		OTHER_CARDTYPE="SD"
-	else
-		BOOT_CARDTYPE="${CARD_TYPE}"
 	fi
 elif [ -f /ODROID_XU ]; then
 	O_BOARD="XU"
@@ -276,7 +275,7 @@ elif [ -f /ODROID_XU ]; then
 
 	if [ "${BOOT_CARDTYPE}" = "none" ]; then
 		BOOT_CARDTYPE="SD"
-		if [ -b /dev/mmcblk1p1 ]; then
+		if [ -b /dev/mmcblk1 ]; then
 			NUMCARDS="2"
 			BOOT_CARDDEV="1"
 			OTHER_CARDDEV="0"
@@ -318,6 +317,15 @@ get_descr() {
 }
 #-----------------------------------------------------
 
+#----------------------------------------------------------------------------------------------------
+restore_bootini() {
+	printf "\033[31m\033[1m %s\033[22m\033[37m" "${1}"
+	cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
+	[ "${O_BOARD}" = "XU" ] && cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
+	umount /mnt_a > /dev/null 2>&1
+	sleep 3
+}
+#----------------------------------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------------------------------------------------
 change_afstab() {
@@ -327,6 +335,8 @@ change_afstab() {
 			# Two cards, boot to Android on NON Boot card
 			if [ "${O_BOARD}" = "C2" ]; then
 				sed -i "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" /mnt_a/${ODROID_FSTAB}
+				# on C2 prepare boot.ini for boot from sdcard
+				sed -i "s/root=\/dev\/mmcblk0p2/root=\/dev\/mmcblk1p2/g" /mnt1/boot.ini
 			else
 				if [ "${OTHER_CARDTYPE}" = "SD" ]; then
 					cp /mnt_a/${ODROID_FSTAB}.other /mnt_a/${ODROID_FSTAB}
@@ -361,11 +371,7 @@ change_afstab() {
 			cp -f /mnt_a/${ODROID_FSTAB} /mnt_a/${ODROID_FSTAB}.sdboot
 		fi
 	else
-		printf "\033[31m\033[1m %s not found\033[22m\033[37m" "${ODROID_FSTAB}"
-		cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
-		[ "${O_BOARD}" = "XU" ] && cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
-		sleep 3
-		umount /mnt_a > /dev/null 2>&1
+		restore_bootini "${ODROID_FSTAB} not found"
 		return 1
 	fi
 	return 0
@@ -406,10 +412,7 @@ do_boot() {
 		# === Copy selected boot.ini to BOOT partition
 		cp /${_actmount}/${_ini_prefix}/${1} /mnt1/boot.ini > /dev/null 2>&1
 		if [ ! $? -eq 0 ]; then
-			cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
-			[ "${O_BOARD}" = "XU" ] && cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
-			printf "\033[31m\033[1m ERROR copying /%s/%s/%s\033[22m\033[37m" "${_actmount}" "${_ini_prefix}" "${1}"
-			sleep 3
+			restore_bootini "ERROR copying /${_actmount}/${_ini_prefix}/${1}"
 			return 1
 		fi
 		sleep 1
@@ -436,11 +439,7 @@ do_boot() {
 				mount -t ext4 /dev/mmcblk${BOOT_CARDDEV}p2 /mnt_a > /dev/null 2>&1
 			fi
 			if [ $? -ne 0 ]; then
-				printf "\033[31m\033[1m Mount Android system partition ERROR\033[22m\033[37m"
-				cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
-				[ "${O_BOARD}" = "XU" ] && cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
-				sleep 3
-				umount /mnt_a > /dev/null 2>&1
+				restore_bootini "Mount Android system partition ERROR"
 				return 1
 			fi
 
@@ -449,32 +448,19 @@ do_boot() {
 			[ $? -ne 0 ] && return 1
 			umount /mnt_a > /dev/null 2>&1
 			# =============================================================
-
-			if [ "${O_BOARD}" = "C2" ] && [ "${change_drive}" = "yes" ]; then
-				# on C2 prepare boot.ini for boot from sdcard, not needed on XU
-				sed -i "s/root=\/dev\/mmcblk0p2/root=\/dev\/mmcblk1p2/g" /mnt1/boot.ini
-			fi
 		fi
 
 		if [ "${O_BOARD}" = "XU" ]; then
 			# Convert boot.ini to boot.scr
 			mkimage -C none -A arm -T script -d /mnt1/boot.ini /mnt1/boot.scr > /dev/null 2>&1
 			if [ $? -ne 0 ]; then
-				printf "\033[31m\033[1m mkimage (boot.scr) ERROR\033[22m\033[37m"
-				cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
-				cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
-				sleep 3
-				umount /mnt_a > /dev/null 2>&1
+				restore_bootini "mkimage (boot.scr) ERROR"
 				return 1
 			fi
 			if [ -f /mnt1/multiboot/newscr ]; then
 				mkimage -C none -A arm -T script -d /mnt1/multiboot/boot.ini.multi /mnt1/multiboot/boot.scr.multi > /dev/null 2>&1
 				if [ $? -ne 0 ]; then
-					printf "\033[31m\033[1m mkimage (boot.scr.multi) ERROR\033[22m\033[37m"
-					cp /mnt1/${_ini_prefix}/boot.ini.multi /mnt1/boot.ini > /dev/null 2>&1
-					cp /mnt1/${_ini_prefix}/boot.scr.multi /mnt1/boot.scr > /dev/null 2>&1
-					sleep 3
-					umount /mnt_a > /dev/null 2>&1
+					restore_bootini "mkimage (boot.scr.multi) ERROR"
 					return 1
 				fi
 				rm -f /mnt1/multiboot/newscr > /dev/null 2>&1
