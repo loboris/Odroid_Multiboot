@@ -45,7 +45,6 @@ A_FROMDIR=""
 L_FROMDIR=""
 L2_FROMDIR=""
 O_FROMDIR=""
-INST_DELAY=60
 SYSTEM_SIZE=1024
 SYSTEM_MINSIZE=768
 DATA_SIZE=1024
@@ -66,6 +65,7 @@ _erase_data="no"
 _part6_label="auxpart"
 _part6_dlabel="Reserved"
 _instfound="no"
+andro_updatearchive="no"
 
 #-----------------------------------------------------
 # Check card type
@@ -240,7 +240,7 @@ if [ "${_instfound}" = "no" ]; then
 	printf "    \033[33m\033[1mNOT FOUND, aborted\033[22m\033[37m\n"
 	exit_script
 fi
-printf "    \033[33m\032[1mFOUND on sd%s%s\033[22m\033[37m\n" "${src_drive}${src_part}"
+printf "    \033[32m\033[1mFOUND on sd%s%s\033[22m\033[37m\n" "${src_drive}${src_part}"
 sleep 2
 #----------------------------------------------------
 
@@ -699,7 +699,7 @@ return 0
 prepare_card() {
 	echo "==== PREPARE CARD ====" >> ${log_file}
 
-	printf "    Partitioning the card "
+	printf "    Partitioning %s card " "${DEST_EMMC}"
 
 	# ---- Erase card -------------------------------------------------------
 	/bin/dd if=/dev/zero of=${DEST_CARD} bs=512 count=${part_start} >> ${log_file} 2>&1
@@ -1045,13 +1045,13 @@ check_android_backup() {
     andro_dest="${source_mount}/${BKP_PREFIX}_backup/android"
 
     if [ ! -f ${andro_dest}/system.raw.img ] || [ ! -f ${andro_dest}/data.raw.img ] || [ ! -f ${andro_dest}/cache.raw.img ]; then
-		if [ ! -f ${andro_source}/system.raw.img ]; then
+		if [ ! -f ${andro_dest}/system.raw.img ]; then
 			echo "    system.img missing."
 		fi
-		if [ ! -f ${andro_source}/data.raw.img ]; then
+		if [ ! -f ${andro_dest}/data.raw.img ]; then
 			echo "    data.img missing."
 		fi
-		if [ ! -f ${andro_source}/cache.raw.img ]; then
+		if [ ! -f ${andro_dest}/cache.raw.img ]; then
 			echo "    cache.img missing."
 		fi
 		sleep 2
@@ -1077,6 +1077,9 @@ check_android_backup() {
 #----------------------------------------------------------------------------
 unpack_android() {
 	echo "==== UNPACK ANDROID ====" >> ${log_file}
+
+	andro_updatearchive="no"
+
 	mkdir /run/inst >> ${log_file} 2>&1
 	mkdir /run/inst/android >> ${log_file} 2>&1
 	rm -rf /run/inst/android/* >> ${log_file} 2>&1
@@ -1091,6 +1094,7 @@ unpack_android() {
 		cd ${source_mount}/android
 		tar -xf update.tar.gz --warning=no-timestamp >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			echo "ERROR extracting archive."
 			cd /
 			return 1
@@ -1098,27 +1102,78 @@ unpack_android() {
 		rm update.tar.gz
 		_name=$(ls)
 		if [ ! -d "${_name}" ]; then
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			echo "install directory not found in archive!"
 			cd /
 			return 1
 		fi
 		if [ ! -f ${_name}/${ODROID_ASYSTEMIMAGE} ]; then
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			echo "system.img not found!"
 			cd /
 			return 1
 		fi
 		andro_source="${source_mount}/android/${_name}"
 		cd /
-	elif [ -f ${source_mount}/update.zip ]; then
+	elif [ -f ${source_mount}/update.zip ] && [ "${O_BOARD}" = "C2" ]; then
+			mkdir ${source_mount}/android >> ${log_file} 2>&1
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+			# unzip
+			unzip -qq ${source_mount}/update.zip -d ${source_mount}/android >> ${log_file} 2>&1
+			if [ $? -ne 0 ]; then
+				rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+				echo "ERROR unpacking \"update.zip\"."
+				return 1
+			fi
+			sync
+			if [ -d ${source_mount}/android/rootsystem ]; then
+				# C2 android upgrade archive
+				andro_updatearchive="yes"
+				andro_source="${source_mount}/android"
+			else
+				rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+				echo "ERROR: not android update archive"
+				return 1
+			fi
+	elif [ -f ${source_mount}/update.zip ] && [ "${O_BOARD}" = "XU" ]; then
 			mkdir ${source_mount}/android >> ${log_file} 2>&1
 			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			# unzip, dont make directories
 			unzip -qq -j ${source_mount}/update.zip -d ${source_mount}/android >> ${log_file} 2>&1
 			if [ $? -ne 0 ]; then
+				rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 				echo "ERROR unpacking \"update.zip\"."
 				return 1
 			fi
 			sync
+			if [ ! -f ${andro_source}/${ODROID_IMAGE} ]; then
+				# check if the archive contains instalation image
+				_name=$(ls *.img 2> /dev/null)
+				if [ "${_name}" == "${_name%[[:space:]]*}" ]; then
+					if [ ! "${_name}" = "" ]; then
+						# mount instalation image and copy install files
+						mkdir ${source_mount}/android/inst_mnt >> ${log_file} 2>&1
+						mount -t vfat ${_name} ${source_mount}/android/inst_mnt >> ${log_file} 2>&1
+						if [ $? -ne 0 ]; then
+							rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+							echo "ERROR: not android archive"
+							return 1
+						fi
+						cp -f ${source_mount}/android/inst_mnt/* ${source_mount}/android >> ${log_file} 2>&1
+						umount ${source_mount}/android/inst_mnt >> ${log_file} 2>&1
+						rmdir ${source_mount}/android/inst_mnt >> ${log_file} 2>&1
+						rm -f ${source_mount}/android/inst_mnt/${_name} >> ${log_file} 2>&1
+					else
+						rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+						echo "ERROR: not android archive"
+						return 1
+					fi
+				else
+					rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+					echo "ERROR: not android archive"
+					return 1
+				fi
+			fi
 			andro_source="${source_mount}/android"
 	else
 		echo "ERROR: archive file not found."
@@ -1135,6 +1190,7 @@ unpack_android() {
 			if [ -f ${andro_source}/zImage-dtb ]; then
 				mv ${andro_source}/zImage-dtb ${andro_source}/${ODROID_IMAGE} >> ${log_file} 2>&1
 				if [ $? -ne 0 ]; then
+					rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 					echo "    ERROR renaming zImage-dtb"
 					sleep 4
 					return 1
@@ -1146,15 +1202,22 @@ unpack_android() {
 				return 1
 			fi
 		else
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			sleep 4
 			return 1
 		fi
     fi
 	if [ "${O_BOARD}" = "C2" ] && [ ! -f ${andro_source}/${ODROID_DTB} ]; then
+		rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 		echo "    ${ODROID_DTB} not found!"
 		sleep 2
 		return 1
     fi
+
+	if [ "${andro_updatearchive}" = "yes" ]; then
+		andro_dest="${andro_source}"
+		return 0
+	fi
 
     if [ ! -f ${andro_source}/${ODROID_ASYSTEMIMAGE} ] || [ ! -f ${andro_source}/userdata.img ] || [ ! -f ${andro_source}/cache.img ]; then
 		if [ ! -f ${andro_source}/userdata.img ]; then
@@ -1177,17 +1240,20 @@ unpack_android() {
 				fi
 			fi
 			if [ ! -f ${andro_source}/userdata.img ]; then
+				rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 				echo "    userdata.img missing."
 				sleep 2
 				return 1
 			fi
 		fi
 		if [ ! -f ${andro_source}/${ODROID_ASYSTEMIMAGE} ]; then
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			echo "    system.img missing."
 			sleep 2
 			return 1
 		fi
 		if [ ! -f ${andro_source}/cache.img ]; then
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 			echo "    cache.img missing."
 			sleep 2
 			return 1
@@ -1221,6 +1287,7 @@ unpack_android() {
 	printf "    system ... "
 	simg2img ${andro_source}/${ODROID_ASYSTEMIMAGE} ${andro_dest}/system.raw.img >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
+		rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 		echo "ERROR."
 		return 1
 	fi
@@ -1230,6 +1297,7 @@ unpack_android() {
 	printf "cache... "
 	simg2img ${andro_source}/cache.img ${andro_dest}/cache.raw.img >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
+		rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 		echo "ERROR."
 		return 1
 	fi
@@ -1239,6 +1307,7 @@ unpack_android() {
 	printf "data... "
 	simg2img ${andro_source}/userdata.img ${andro_dest}/data.raw.img >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
+		rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
 		echo "ERROR."
 		return 1
 	fi
@@ -1261,25 +1330,34 @@ install_android() {
 		echo "==== INSTALL ANDROID ====" >> ${log_file}
 		printf "\n    \033[33mInstalling \033[1mAndroid\033[22m\033[37m"
 	fi
-    if [ -d ${source_mount}/backup/android/system ]; then
+
+    if [ "${A_FROMDIR}" = "yes" ]; then
 		printf " (from backup)\n"
 	else
 		printf "\n"
 	fi
+
+	local src_system="/mnt1"
 
 	mkdir /mnt1 >> ${log_file} 2>&1
 	mkdir /mnt2 >> ${log_file} 2>&1
 
 	umount /mnt2 >> ${log_file} 2>&1
 	umount /mnt1 >> ${log_file} 2>&1
+
 	# === Copy system partition ===
 	printf "    Installing \033[36msystem\033[37m ... "
-	# mount source
-	mount -t ext4 -o ro,loop ${andro_dest}/system.raw.img /mnt1 >> ${log_file} 2>&1
-	if [ $? -ne 0 ]; then
-		echo "ERROR mounting system image."
-		return 1
+	if [ ! "${andro_updatearchive}" = "yes" ]; then
+		# mount source
+		mount -t ext4 -o ro,loop ${andro_dest}/system.raw.img /mnt1 >> ${log_file} 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR mounting system image."
+			return 1
+		fi
+	else
+		src_system="${andro_dest}/rootsystem"
 	fi
+
 	# mount destination
 	if [ "${UPGRADE_ANDROID}" = "yes" ]; then
 		mount -t ext4 ${_dest_system} /mnt2 >> ${log_file} 2>&1
@@ -1297,9 +1375,13 @@ install_android() {
 		rm -rfd /mnt2/* >> ${log_file} 2>&1
 	fi
 
-	rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials /mnt1/ /mnt2/ >> ${log_file} 2>&1
+	rsync -r -t -p -o -g -x -l -H -D --numeric-ids -s -A -X --no-specials ${src_system}/ /mnt2/ >> ${log_file} 2>&1
 	if [ $? -ne 0 ]; then
-		umount /mnt1 >> ${log_file} 2>&1
+		if [ "${andro_updatearchive}" = "yes" ]; then
+			rm -rf ${src_system:?}/* >> ${log_file} 2>&1
+		else
+			umount /mnt1 >> ${log_file} 2>&1
+		fi
 		umount /mnt2 >> ${log_file} 2>&1
 		echo "ERROR copying system."
 		return 1
@@ -1332,7 +1414,11 @@ install_android() {
 		fi
 	else
 		echo "ERROR: ${ODROID_FSTAB} not found"
-		umount /mnt1 >> ${log_file} 2>&1
+		if [ "${andro_updatearchive}" = "yes" ]; then
+			rm -rf ${src_system:?}/* >> ${log_file} 2>&1
+		else
+			umount /mnt1 >> ${log_file} 2>&1
+		fi
 		umount /mnt2 >> ${log_file} 2>&1
 		return 1
     fi
@@ -1345,12 +1431,16 @@ install_android() {
 		fi
 	fi
 
-    umount /mnt1 >> ${log_file} 2>&1
+	if [ "${andro_updatearchive}" = "yes" ]; then
+		rm -rf ${src_system:?}/* >> ${log_file} 2>&1
+	else
+		umount /mnt1 >> ${log_file} 2>&1
+	fi
     umount /mnt2 >> ${log_file} 2>&1
     sleep 1
     printf "OK  "
 
-	if [ ! "${UPGRADE_ANDROID}" = "yes" ]; then
+	if [ ! "${UPGRADE_ANDROID}" = "yes" ] && [ ! "${andro_updatearchive}" = "yes" ]; then
 		# === Copy data partition ===
 		printf "\033[36mdata\033[37m ... "
 		# mount source
@@ -1380,8 +1470,7 @@ install_android() {
 		umount /mnt2 >> ${log_file} 2>&1
 		sleep 1
 		printf "OK  "
-    else
-        if [ "${_erase_data}" = "yes" ]; then
+    elif [ "${UPGRADE_ANDROID}" = "yes" ] && [ "${_erase_data}" = "yes" ]; then
             printf "\033[36merasing data\033[37m ... "
             # mount destination
     		mount -t ext4 ${_dest_data} /mnt2 >> ${log_file} 2>&1
@@ -1395,7 +1484,6 @@ install_android() {
                     printf "OK  "
                 fi
     		fi
-        fi
 	fi
 
 	# === Copy cache partition ===
@@ -1915,12 +2003,12 @@ if [ "${UPGRADE_ANDROID}" = "yes" ]; then
 	unpack_android
 	if [ $? -ne 0 ]; then
 		printf "    \033[35mANDROID cannot be upgraded!\033[37m\n"
-		rm -rf rm ${source_mount}/android/* >> ${log_file} 2>&1
-		rmdir rm ${source_mount}/android >> ${log_file} 2>&1
+		rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+		rmdir ${source_mount}/android >> ${log_file} 2>&1
 		exit_script
 	fi
-	rm -rf rm ${source_mount}/android/* >> ${log_file} 2>&1
-	rmdir rm ${source_mount}/android >> ${log_file} 2>&1
+	rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+	rmdir ${source_mount}/android >> ${log_file} 2>&1
 
 	install_android
 	if [ $? -ne 0 ]; then
@@ -1957,12 +2045,44 @@ if [ "${INST_ANDROID}" = "yes" ]; then
 		if [ $? -ne 0 ]; then
 			echo "    ANDROID won't be installed!"
 			INST_ANDROID="no"
-			sleep 1
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+			rmdir ${source_mount}/android >> ${log_file} 2>&1
+			sleep 3
 		fi
-		rm -rf rm ${source_mount}/android/* >> ${log_file} 2>&1
-		rmdir rm ${source_mount}/android >> ${log_file} 2>&1
+	fi
+	if [ ! "${INST_ANDROID}" = "yes" ]; then
+		SYSTEM_MINSIZE=8
+		DATA_MINSIZE=8
+		SYSTEM_SIZE=8
+		DATA_SIZE=8
+		CACHE_SIZE=8
+		CACHE_MINSIZE=8
+		USERDATA_MINSIZE=256
+		USERDATA_SIZE=256
 	fi
     sleep 2
+fi
+
+if [ "${INST_LINUX}" = "yes" ]; then
+	get_lin_partstruct "/mnt/linux.img"
+	if [ $? -ne 0 ]; then
+		echo "    LINUX won't be installed!"
+		INST_LINUX="no"
+		LINUX_MINSIZE=8
+		LINUX_SIZE=8
+		sleep 3
+	fi
+fi
+
+if [ "${INST_LINUX2}" = "yes" ]; then
+	get_lin_partstruct "/mnt/linux2.img"
+	if [ $? -ne 0 ]; then
+		echo "    LINUX 2 won't be installed!"
+		INST_LINUX2="no"
+		OELEC_MINSIZE=8
+		OELEC_SIZE=8
+		sleep 3
+	fi
 fi
 #----------------------------------------------------------------
 
@@ -1970,14 +2090,13 @@ print_header
 check_inst
 print_settings
 
+#==================================
 #---- Main menu -------------------
-_inst_delay=${INST_DELAY}
+#==================================
 
-while [ $_inst_delay -gt 0 ]; do
-    [ $INST_DELAY -lt 60 ] && printf "    Auto start install in %s sec       \r" "$_inst_delay"
+while true; do
     A="z"
     if read -n 1 -t 1 -s A; then
-		_inst_delay=${INST_DELAY}
 		if [ "${A}" = "1" ] && [ "${NUMCARDS}" = "2" ]; then
 			print_header
 			set_dest
@@ -2059,8 +2178,6 @@ while [ $_inst_delay -gt 0 ]; do
 			# SCREENSHOT ===
 			fbcat > /install.ppm
 		fi
-    else
-		[ $INST_DELAY -lt 60 ] && let _inst_delay=_inst_delay-1
     fi
 done
 
@@ -2086,7 +2203,7 @@ print_header
 # --- Partition and format the card ----------------------------
 prepare_card
 if [ $? -ne 0 ]; then
-    printf "    \033[35mERROR PREPARING SD/EMMC CARD!\033[37m\n"
+    printf "    \033[35mERROR PREPARING %s CARD!\033[37m\n" "${DEST_EMMC}"
 else
 	# install bootloader
 	if [ "${O_BOARD}" = "C2" ]; then
@@ -2106,6 +2223,8 @@ else
 			fi
 			rm -rf /run/inst/android/* >> ${log_file} 2>&1
 			rmdir /run/inst/android >> ${log_file} 2>&1
+			rm -rf ${source_mount}/android/* >> ${log_file} 2>&1
+			rmdir ${source_mount}/android >> ${log_file} 2>&1
 		fi
 
 		if [ "${INST_LINUX}" = "yes" ]; then
