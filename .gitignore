@@ -1,0 +1,4 @@
+debootstrap/
+for_orig_card/
+*.linux/
+*.OK/

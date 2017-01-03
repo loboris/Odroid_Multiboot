@@ -19,7 +19,7 @@ if [ "${1}" = "" ]; then
     usage
     exit 1
 fi
-if [ ! "${2}" = "xu4" ] && [ ! "${2}" = "c2" ]; then
+if [ ! "${2}" = "xu4" ] && [ ! "${2}" = "c2" ] && [ ! "${2}" = "c1" ]; then
     printf "\n\033[31m\033[1mOdroid board type must be \033[33mxu4\033[31m or \033[33mc2\033[31m\033[37m\n"
     usage
     exit 1
@@ -32,6 +32,17 @@ if [ "${2}" = "c2" ]; then
 	part_start=65536       # RESERVE 32MB AT CARD START
 	o_device="c2"
 	src_dir="C2"
+	if [ "${3}" = "emmc" ] || [ "${3}" = "EMMC" ]; then
+		emmc_install="yes"
+		emmc_disp="(EMMC card)"
+	else
+		emmc_install="no"
+		emmc_disp="(SD card)"
+	fi
+elif [ "${2}" = "c1" ]; then
+	part_start=65536       # RESERVE 32MB AT CARD START
+	o_device="c1"
+	src_dir="C1"
 	if [ "${3}" = "emmc" ] || [ "${3}" = "EMMC" ]; then
 		emmc_install="yes"
 		emmc_disp="(EMMC card)"
@@ -117,6 +128,26 @@ if [ ${o_device} = "xu4" ]; then
 		echo "ERROR installing tzsw.bin."
 	fi
 	sync
+elif [ ${o_device} = "c1" ]; then
+	dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=1 count=442 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR installing bl1.bin."
+	fi
+	dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=512 skip=1 seek=1 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR installing bl1.bin."
+	fi
+	sync
+	dd if=${src_dir}/initramfs/ramfs/multi/u-boot.bin of=${sdcard} bs=512 seek=64 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR installing u-boot.bin."
+	fi
+	sync
+	# u-boot env erase
+	dd if=/dev/zero of=${sdcard} seek=1024 count=64 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR erasing u-boot environment."
+	fi
 else
 	dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=1 count=442 > /dev/null 2>&1
 	if [ $? -ne 0 ]; then

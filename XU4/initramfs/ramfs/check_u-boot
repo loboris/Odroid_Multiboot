@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# ******************************
+# Install u-boot to SD/EMMC card
+# ******************************
+
+if [ "$(id -u)" != "0" ]; then
+	echo "Script must be run as root !"
+	exit 0
+fi
+
+if [ ! -f /opt/multiboot/u-boot.bin ]; then
+	echo "ERROR: u-boot.bin not found"
+	exit 1
+fi
+
+uboot_part="/dev/mmcblk0"
+[ -b /dev/mmcblk0boot0 ] && uboot_part="/dev/mmcblk0boot0"
+
+# Extract installed u-boot to file
+dd if=${uboot_part} of=/tmp/this_u-boot.bin bs=512 skip=63 count=2048 > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+	echo "ERROR extracting u-boot from mmcblk0"
+	exit 2
+fi
+
+# compare
+UBOOT_SIZE=$(stat -c%s /opt/multiboot/u-boot.bin)
+cmp -s -n ${UBOOT_SIZE} /opt/multiboot/u-boot.bin /tmp/this_u-boot.bin
+if [ $? -ne 0 ]; then
+	# Not equal
+	if [ "${uboot_part}" = "/dev/mmcblk0boot0" ]; then
+		if [ -e /sys/block/mmcblk0boot0/force_ro ]; then
+			echo 0 > /sys/block/mmcblk0boot0/force_ro
+			if [ $? -ne 0 ]; then
+				echo "ERROR enabling boot0."
+				exit 1
+			fi
+		else
+			echo "ERROR: boot0 not found."
+			exit 1
+		fi
+	fi
+	dd if=/opt/multiboot/u-boot.bin of=${uboot_part} bs=512 seek=63 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR writting u-boot to mmcblk0"
+		exit 3
+	fi
+	if [ "${uboot_part}" = "/dev/mmcblk0boot0" ]; then
+		echo 1 > /sys/block/mmcblk0boot0/force_ro
+	fi
+	sync
+	echo "u-boot on mmcblk0 UPDATED"
+else
+	echo "u-boot on mmcblk0 OK"
+fi
+
+[ ! -b /dev/mmcblk1 ] && exit 0
+
+uboot_part="/dev/mmcblk1"
+[ -b /dev/mmcblk1boot0 ] && uboot_part="/dev/mmcblk1boot0"
+
+# Extract installed u-boot to file
+dd if=${uboot_part} of=/tmp/this_u-boot.bin bs=512 skip=63 count=2048 > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+	echo "ERROR extracting u-boot from mmcblk1"
+	exit 4
+fi
+
+# compare
+cmp -s -n ${UBOOT_SIZE} /opt/multiboot/u-boot.bin /tmp/this_u-boot.bin
+if [ $? -ne 0 ]; then
+	# Not equal
+	if [ "${uboot_part}" = "/dev/mmcblk1boot0" ]; then
+		if [ -e /sys/block/mmcblk1boot0/force_ro ]; then
+			echo 0 > /sys/block/mmcblk1boot0/force_ro
+			if [ $? -ne 0 ]; then
+				echo "ERROR enabling boot0."
+				exit 1
+			fi
+		else
+			echo "ERROR: boot0 not found."
+			exit 1
+		fi
+	fi
+	dd if=/opt/multiboot/u-boot.bin of=${uboot_part} bs=512 seek=63 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		echo "ERROR writting u-boot to mmcblk1"
+		exit 5
+	fi
+	if [ "${uboot_part}" = "/dev/mmcblk1boot0" ]; then
+		echo 1 > /sys/block/mmcblk1boot0/force_ro
+	fi
+	sync
+	echo "u-boot on mmcblk1 UPDATED"
+else
+	echo "u-boot on mmcblk1 OK"
+fi
+
+exit 0

@@ -14,15 +14,6 @@ setenv DEFAULT_OS "1"
 # ===============================================================
 
 
-# ===============================================================
-# Card type on which is this file, must be SD or EMMC           =
-# !! DO NOT CHANGE !!                                           =                                        
-# (will be changed automaticaly when installed on EMMC)         =
-# ------------------------------------------------------------- =
-setenv CARD_TYPE SD
-# ===============================================================
-
-
 # UNCOMMENT ONE OF BELOW SCREEN RESOLUTIONS TO USE FOR BOOT MENU/INSTALLATION
 
 # Possible screen resolutions
@@ -155,9 +146,12 @@ setenv max_freq "1536"  # 1.536GHz
 # Boot Arguments
 if test "${m}" = "custombuilt"; then setenv cmode "modeline=${modeline}"; fi
 
-setenv bootargs "console=tty0 quiet cardtype=${CARD_TYPE} boot_delay=${BOOT_DELAY} default_os=${DEFAULT_OS} no_console_suspend loglevel=0 hdmimode=${m} ${comde} m_bpp=${m_bpp} vout=${vout} fsck.repair=yes net.ifnames=0 elevator=noop disablehpd=${hpd} max_freq=${max_freq} maxcpus=${maxcpus} monitor_onoff=${monitor_onoff}"
+if test "${is_boot_card}" = ""; then setenv is_boot_card="unknown"; fi
+
+setenv bootargs "console=tty0 quiet boot_card_type=${is_boot_card} boot_delay=${BOOT_DELAY} default_os=${DEFAULT_OS} no_console_suspend loglevel=0 hdmimode=${m} ${comde} m_bpp=${m_bpp} vout=${vout} fsck.repair=yes net.ifnames=0 elevator=noop disablehpd=${hpd} max_freq=${max_freq} maxcpus=${maxcpus} monitor_onoff=${monitor_onoff}"
 
 # Booting
+echo "### BOOTED FROM ${is_boot_card} ###"
 
 setenv loadaddr "0x11000000"
 setenv dtb_loadaddr "0x1000000"

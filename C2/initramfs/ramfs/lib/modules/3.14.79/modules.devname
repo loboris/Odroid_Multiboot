@@ -1,0 +1,7 @@
+# Device nodes to trigger on-demand module loading.
+autofs4 autofs c10:235
+tun net/tun c10:200
+ppp_generic ppp c108:0
+dm_mod mapper/control c10:236
+hci_vhci vhci c10:137
+snd_seq snd/seq c116:1

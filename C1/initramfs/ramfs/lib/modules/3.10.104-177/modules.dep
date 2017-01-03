@@ -1,0 +1,73 @@
+kernel/fs/nls/nls_cp437.ko:
+kernel/fs/reiserfs/reiserfs.ko:
+kernel/fs/squashfs/squashfs.ko:
+kernel/fs/isofs/isofs.ko:
+kernel/fs/nfs/nfs.ko: kernel/fs/lockd/lockd.ko kernel/net/sunrpc/sunrpc.ko kernel/net/dns_resolver/dns_resolver.ko
+kernel/fs/nfs/nfsv2.ko: kernel/fs/nfs/nfs.ko kernel/fs/lockd/lockd.ko kernel/net/sunrpc/sunrpc.ko kernel/net/dns_resolver/dns_resolver.ko
+kernel/fs/nfs/nfsv3.ko: kernel/fs/nfs/nfs.ko kernel/fs/lockd/lockd.ko kernel/net/sunrpc/sunrpc.ko kernel/net/dns_resolver/dns_resolver.ko
+kernel/fs/nfs/nfsv4.ko: kernel/fs/nfs/nfs.ko kernel/fs/lockd/lockd.ko kernel/net/sunrpc/sunrpc.ko kernel/net/dns_resolver/dns_resolver.ko
+kernel/fs/lockd/lockd.ko: kernel/net/sunrpc/sunrpc.ko
+kernel/fs/udf/udf.ko:
+kernel/fs/btrfs/btrfs.ko: kernel/crypto/xor.ko kernel/lib/raid6/raid6_pq.ko
+kernel/crypto/xor.ko:
+kernel/drivers/video/sysfillrect.ko:
+kernel/drivers/video/syscopyarea.ko:
+kernel/drivers/video/sysimgblt.ko:
+kernel/drivers/gpu/drm/drm_kms_helper.ko:
+kernel/drivers/gpu/drm/drm_usb.ko:
+kernel/drivers/gpu/drm/udl/udl.ko: kernel/drivers/video/syscopyarea.ko kernel/drivers/video/sysfillrect.ko kernel/drivers/video/sysimgblt.ko kernel/drivers/gpu/drm/drm_usb.ko kernel/drivers/gpu/drm/drm_kms_helper.ko
+kernel/drivers/gpu/arm/umplock/umplock.ko:
+kernel/drivers/block/nbd.ko:
+kernel/drivers/block/drbd/drbd.ko: kernel/lib/lru_cache.ko
+kernel/drivers/scsi/scsi_transport_iscsi.ko:
+kernel/drivers/scsi/libiscsi.ko: kernel/drivers/scsi/scsi_transport_iscsi.ko
+kernel/drivers/scsi/libiscsi_tcp.ko: kernel/drivers/scsi/libiscsi.ko kernel/drivers/scsi/scsi_transport_iscsi.ko
+kernel/drivers/scsi/iscsi_tcp.ko: kernel/drivers/scsi/libiscsi_tcp.ko kernel/drivers/scsi/libiscsi.ko kernel/drivers/scsi/scsi_transport_iscsi.ko
+kernel/drivers/scsi/iscsi_boot_sysfs.ko:
+kernel/drivers/net/ppp/ppp_async.ko:
+kernel/drivers/net/ppp/bsd_comp.ko:
+kernel/drivers/net/ppp/ppp_deflate.ko:
+kernel/drivers/net/ppp/ppp_mppe.ko:
+kernel/drivers/net/ppp/ppp_synctty.ko:
+kernel/drivers/net/ppp/pppox.ko:
+kernel/drivers/net/ppp/pppoe.ko: kernel/drivers/net/ppp/pppox.ko
+kernel/drivers/net/ppp/pppolac.ko: kernel/drivers/net/ppp/pppox.ko
+kernel/drivers/net/ppp/pppopns.ko: kernel/drivers/net/ppp/pppox.ko
+kernel/drivers/input/ff-memless.ko:
+kernel/drivers/mmc/host/vub300.ko:
+kernel/drivers/mmc/host/ushc.ko:
+kernel/drivers/hid/hid-apple.ko:
+kernel/drivers/hid/hid-aureal.ko:
+kernel/drivers/hid/hid-belkin.ko:
+kernel/drivers/hid/hid-cherry.ko:
+kernel/drivers/hid/hid-chicony.ko:
+kernel/drivers/hid/hid-ezkey.ko:
+kernel/drivers/hid/hid-holtek-kbd.ko:
+kernel/drivers/hid/hid-keytouch.ko:
+kernel/drivers/hid/hid-lenovo-tpkbd.ko:
+kernel/drivers/hid/hid-logitech.ko: kernel/drivers/input/ff-memless.ko
+kernel/drivers/hid/hid-logitech-dj.ko:
+kernel/drivers/hid/hid-microsoft.ko:
+kernel/drivers/hid/hid-monterey.ko:
+kernel/drivers/hid/hid-ortek.ko:
+kernel/drivers/hid/hid-prodikeys.ko: kernel/sound/core/snd-rawmidi.ko kernel/sound/core/seq/snd-seq-device.ko
+kernel/drivers/hid/hid-primax.ko:
+kernel/drivers/hid/hid-roccat.ko:
+kernel/drivers/hid/hid-roccat-common.ko:
+kernel/drivers/hid/hid-roccat-arvo.ko: kernel/drivers/hid/hid-roccat.ko kernel/drivers/hid/hid-roccat-common.ko
+kernel/drivers/hid/hid-roccat-isku.ko: kernel/drivers/hid/hid-roccat.ko kernel/drivers/hid/hid-roccat-common.ko
+kernel/drivers/hid/hid-roccat-lua.ko: kernel/drivers/hid/hid-roccat-common.ko
+kernel/drivers/hid/hid-roccat-savu.ko: kernel/drivers/hid/hid-roccat.ko kernel/drivers/hid/hid-roccat-common.ko
+kernel/drivers/hid/hid-samsung.ko:
+kernel/drivers/hid/hid-sjoy.ko: kernel/drivers/input/ff-memless.ko
+kernel/drivers/hid/hid-steelseries.ko:
+kernel/drivers/hid/hid-sunplus.ko:
+kernel/drivers/hid/hid-thingm.ko:
+kernel/drivers/hid/hid-topseed.ko:
+kernel/drivers/hid/hid-xinmo.ko:
+kernel/sound/core/snd-rawmidi.ko: kernel/sound/core/seq/snd-seq-device.ko
+kernel/sound/core/seq/snd-seq-device.ko:
+kernel/net/sunrpc/sunrpc.ko:
+kernel/net/dns_resolver/dns_resolver.ko:
+kernel/lib/raid6/raid6_pq.ko:
+kernel/lib/lru_cache.ko:

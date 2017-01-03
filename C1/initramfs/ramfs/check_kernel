@@ -1,0 +1,34 @@
+#!/bin/bash
+
+if [ -f /media/boot/uImage ] && [ -f /media/boot/meson8b_odroidc.dtb ] && [ -f /media/boot/uInitrd ]; then
+	echo "Backup original multiboot kernel files to 'old' directory"
+	mkdir /media/boot/multiboot/old.linux > /dev/null 2>&1
+	cp -f /media/boot/multiboot/uImage.linux /media/boot/multiboot/old.linux > /dev/null
+	cp -f /media/boot/multiboot/meson8b_odroidc.dtb.linux /media/boot/multiboot/old.linux > /dev/null
+	cp -f /media/boot/multiboot/uInitrd.linux /media/boot/multiboot/old.linux > /dev/null
+
+	echo "Move new kernel files to 'multiboot' directory"
+	mv -f /media/boot/uImage /media/boot/multiboot/uImage.linux > /dev/null
+	mv -f /media/boot/meson8b_odroidc.dtb /media/boot/multiboot/meson8b_odroidc.dtb.linux > /dev/null
+	mv -f /media/boot/uInitrd /media/boot/multiboot/uInitrd.linux > /dev/null
+fi
+
+if [ -f /media/boot/boot.ini.old ]; then
+	echo "Restoring 'boot.ini' for multiboot"
+	rm /media/boot/boot.ini.old > /dev/null
+	mv -f /media/boot/boot.ini /media/boot/boot.ini.new > /dev/null
+	cp -f /media/boot/multiboot/boot.ini.multi /media/boot/boot.ini > /dev/null
+fi
+
+if [ ! -f /media/boot/boot.scr ]; then
+	is_mbini=""
+	if [ -f /media/boot/boot.ini ]; then
+		is_mbini=$(cat /media/boot/boot.ini | grep -o multiboot/uInitrd.multi)
+	fi
+	if [ "${is_mbini}" = "" ]; then
+		echo "Restoring 'boot.ini' for multiboot"
+		cp -f /media/boot/multiboot/boot.ini.multi /media/boot/boot.ini > /dev/null
+	fi
+fi
+
+exit 0

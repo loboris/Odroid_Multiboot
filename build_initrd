@@ -1,15 +1,35 @@
 #!/bin/bash
 
-
+echo
+echo "### Copy common scripts to initramfs directories"
+cp -f scripts/* C1/initramfs/ramfs
 cp -f scripts/* C2/initramfs/ramfs
 cp -f scripts/* XU4/initramfs/ramfs
 
+echo "### Create multiboot initrd for Odroid-C1"
+cd C1/initramfs
+./pack > /dev/null
+
+cd ../../
+
+echo "### Create multiboot initrd for Odroid-C2"
 cd C2/initramfs
-./pack
+./pack > /dev/null
 
 cd ../../
 
+echo "### Create multiboot initrd for Odroid-XU3/XU4"
 cd XU4/initramfs
-./pack
+./pack > /dev/null
 
 cd ../../
+
+echo "### Create boot.scr for Odroid-XU3/XU4"
+mkimage -C none -A arm -T script -d XU4/multiboot/boot.ini.multi XU4/multiboot/boot.scr.multi > /dev/null
+
+cp -rf C1/multiboot/* for_orig_card/C1/multiboot
+cp -rf C2/multiboot/* for_orig_card/C2/multiboot
+cp -f XU4/multiboot/*.multi for_orig_card/XU4/multiboot
+
+echo "### Finished."
+echo

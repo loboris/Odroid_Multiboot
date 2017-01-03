@@ -1,5 +1,5 @@
-MultiBoot menu and tools for Odroid XU3/XU4 & C2
-===========================================
+MultiBoot menu and tools for Odroid C1, C2, XU3/XU4
+===================================================
 
 About
 -----

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Last change: 07. Dec. 2016.
+
 # ============================================================
 # This is the standard Ubuntu initramfs initialization process
 # ============================================================
@@ -68,9 +70,11 @@ export fsckfix=
 export recovery=
 export BOOT_CARDTYPE="unknown"
 export OTHER_CARDTYPE="unknown"
-export BOOT_CARDDEV="9"
+export BOOT_CARDDEV="0"
 export OTHER_CARDDEV="9"
-export CARD_TYPE="SD"
+
+export EDITOR="mcedit mc"
+
 
 # mdadm needs hostname to be set. This has to be done before the udev rules are called!
 if [ -f "/etc/hostname" ]; then
@@ -97,9 +101,6 @@ for x in $(cat /proc/cmdline); do
         ;;
     boot_card_dev=*)
         BOOT_CARDDEV=${x#boot_card_dev=}
-        ;;
-    cardtype=*)
-        CARD_TYPE=${x#cardtype=}
         ;;
 	boot_delay=*)
 		BOOTDELAY="${x#boot_delay=}"
@@ -189,7 +190,7 @@ sleep 1
 
 [ ! $BOOTDELAY -gt 4 ] &&  BOOTDELAY=5
 
-export SCRIPT_VERSION="v2.3"
+export SCRIPT_VERSION="v2.1"
 export O_BOARD="OD"
 export ODROID_DTB="odroid.dtb"
 export ODROID_FSTAB="fstab.odroid"
@@ -244,10 +245,68 @@ _defdescr="none"
 _defcard="1"
 boot_fail="yes"
 
+ask_for_card() {
+	clear
+	if [ ! "$O_BOARD" = "XU" ]; then
+		mkdir /mnt1 > /dev/null 2>&1
+		umount /mnt1 > /dev/null 2>&1
+
+		mount -t vfat /dev/mmcblk0p1 /mnt1 > /dev/null 2>&1
+		if [ $? -eq 0 ]; then
+			if [ -f /mnt1/THIS_IS_SDCARD ]; then
+				BOOT_CARDTYPE="SD"
+				umount /mnt1 > /dev/null 2>&1
+				return
+			elif [ -f /mnt1/THIS_IS_EMMC ]; then
+				BOOT_CARDTYPE="EMMC"
+				umount /mnt1 > /dev/null 2>&1
+				return
+			fi
+		fi
+		umount /mnt1 > /dev/null 2>&1
+	fi
+
+	printf "\n\n    \033[31m\033[1mBOOT card type is unknown, you have booted from original Odroid card\033[22m\033[37m\n"
+	printf "    \033[31mHave you booted from \033[1mEMMC\033[22m (Y/N) ? \033[37m"
+	local B="X"
+	while true; do
+		if read -n 1 -t 1 -s B; then
+			if [ "${B}" = "y" ] || [ "${B}" = "Y" ]; then
+				BOOT_CARDTYPE="EMMC"
+				break
+			elif [ "${B}" = "n" ] || [ "${B}" = "N" ]; then
+				BOOT_CARDTYPE="SD"
+				if [ "$O_BOARD" = "XU" ] && [ "${NUMCARDS}" = "2" ]; then
+					BOOT_CARDDEV="1"
+				fi
+				break
+			fi
+		fi
+	done
+}
+
 # =========================================================
 # === Set the variables depending on used Odroid board  ===
-if [ -f /ODROID_C2 ]; then
-	O_BOARD="C2"
+
+[ -f /ODROID_C1 ] && O_BOARD="C1"
+[ -f /ODROID_C2 ] && O_BOARD="C2"
+[ -f /ODROID_XU ] && O_BOARD="XU"
+[ -b /dev/mmcblk1 ] && NUMCARDS="2"
+
+[ "${O_BOARD}" = "C1" ] && run_scripts /scripts/panic
+
+if [ "${BOOT_CARDTYPE}" = "unknown" ]; then
+	if [ ! "$O_BOARD" = "XU" ]; then
+		if [ "${NUMCARDS}" = "1" ]; then
+			BOOT_CARDDEV="0"
+			ask_for_card
+		fi
+	elif [ "$O_BOARD" = "XU" ]; then
+		ask_for_card
+	fi
+fi
+
+if [ "$O_BOARD" = "C2" ]; then
 	ADATA_PART_ORIG="4"
 	ACACHE_PART_ORIG="3"
 	ODROID_DTB="meson64_odroidc2.dtb"
@@ -255,16 +314,27 @@ if [ -f /ODROID_C2 ]; then
 	ODROID_IMAGE="Image"
 	ODROID_ASYSTEMIMAGE="rootsystem.img"
 	BKP_PREFIX="C2"
-	BOOT_CARDDEV="0"
-	BOOT_CARDTYPE="${CARD_TYPE}"
-	if [ -b /dev/mmcblk1 ]; then
+	if [ "${NUMCARDS}" = "2" ]; then
 		BOOT_CARDTYPE="EMMC"
 		NUMCARDS="2"
 		OTHER_CARDDEV="1"
 		OTHER_CARDTYPE="SD"
 	fi
-elif [ -f /ODROID_XU ]; then
-	O_BOARD="XU"
+elif [ "$O_BOARD" = "C1" ]; then
+	ADATA_PART_ORIG="4"
+	ACACHE_PART_ORIG="3"
+	ODROID_DTB="meson8b_odroidc.dtb"
+	ODROID_FSTAB="fstab.odroidc"
+	ODROID_IMAGE="uImage"
+	ODROID_ASYSTEMIMAGE="rootsystem.img"
+	BKP_PREFIX="C1"
+	if [ "${NUMCARDS}" = "2" ]; then
+		BOOT_CARDTYPE="EMMC"
+		NUMCARDS="2"
+		OTHER_CARDDEV="1"
+		OTHER_CARDTYPE="SD"
+	fi
+elif [ "$O_BOARD" = "XU" ]; then
 	ADATA_PART_ORIG="3"
 	ACACHE_PART_ORIG="4"
 	ODROID_DTB="exynos5422-odroidxu3.dtb"
@@ -273,28 +343,15 @@ elif [ -f /ODROID_XU ]; then
 	ODROID_ASYSTEMIMAGE="system.img"
 	BKP_PREFIX="XU"
 
-	if [ "${BOOT_CARDTYPE}" = "none" ]; then
-		BOOT_CARDTYPE="SD"
-		if [ -b /dev/mmcblk1 ]; then
-			NUMCARDS="2"
-			BOOT_CARDDEV="1"
+	[ "${BOOT_CARDTYPE}" = "eMMC" ] && BOOT_CARDTYPE="EMMC"
+	if [ "${NUMCARDS}" = "2" ]; then
+		if [ "${BOOT_CARDTYPE}" = "SD" ]; then
 			OTHER_CARDDEV="0"
 			OTHER_CARDTYPE="EMMC"
 		else
+			OTHER_CARDDEV="1"
+			OTHER_CARDTYPE="SD"
 			BOOT_CARDDEV="0"
-		fi
-	else
-		[ "${BOOT_CARDTYPE}" = "eMMC" ] && BOOT_CARDTYPE="EMMC"
-		if [ "${BOOT_CARDDEV}" = 1 ]; then
-			NUMCARDS="2"
-			if [ "${BOOT_CARDTYPE}" = "SD" ]; then
-				OTHER_CARDDEV="0"
-				OTHER_CARDTYPE="EMMC"
-			else
-				OTHER_CARDDEV="1"
-				OTHER_CARDTYPE="SD"
-				BOOT_CARDDEV="0"
-			fi
 		fi
 	fi
 fi
@@ -333,7 +390,7 @@ change_afstab() {
 	if [ -f /mnt_a/${ODROID_FSTAB} ]; then
 		if [ "${1}" = "yes" ]; then
 			# Two cards, boot to Android on NON Boot card
-			if [ "${O_BOARD}" = "C2" ]; then
+			if [ ! "${O_BOARD}" = "XU" ]; then
 				sed -i "s/\/dev\/block\/mmcblk0/\/dev\/block\/mmcblk1/g" /mnt_a/${ODROID_FSTAB}
 				# on C2 prepare boot.ini for boot from sdcard
 				sed -i "s/root=\/dev\/mmcblk0p2/root=\/dev\/mmcblk1p2/g" /mnt1/boot.ini
@@ -348,7 +405,7 @@ change_afstab() {
 			fi
 		else
 			# One or two cards, boot to Android on Boot card
-			if [ "${O_BOARD}" = "C2" ]; then
+			if [ ! "${O_BOARD}" = "XU" ]; then
 				# Restore boot device if modified earlier
 				sed -i "s/\/dev\/block\/mmcblk1/\/dev\/block\/mmcblk0/g" /mnt_a/${ODROID_FSTAB}
 			else
@@ -424,6 +481,11 @@ do_boot() {
 				sed -i "s/fatload mmc 0:1/fatload mmc 1:1/g" /mnt1/boot.ini
 				# for boot.ini loading from /multiboot (it was changed with previous sed operation!)
 				sed -i "s/1:1 0x60000000/0:1 0x60000000/g" /mnt1/boot.ini
+			elif [ "${O_BOARD}" = "C1" ]; then
+				# for kernel/initrd/dtb loading
+				sed -i "s/fatload mmc 0:1/fatload mmc 1:1/g" /mnt1/boot.ini
+				# for boot.ini loading from /multiboot (it was changed with previous sed operation!)
+				sed -i "s/1:1 0x30000000/0:1 0x30000000/g" /mnt1/boot.ini
 			else
 				# for kernel/initrd/dtb loading
 				sed -i "s/setenv change_osdev no/setenv change_osdev yes/g" /mnt1/boot.ini
@@ -642,9 +704,9 @@ os_detect() {
 	clear
 	printf "\n"
 	printf "\033[36m\033[1m\n"
-	if [ "${O_BOARD}" = "C2" ]; then
+	if [ ! "${O_BOARD}" = "XU" ]; then
 		printf "    ============================\n"
-		printf "    = ODROID C2 BOOT MENU %s =\n" "${SCRIPT_VERSION}"
+		printf "    = ODROID %s BOOT MENU %s =\n" "${O_BOARD}" "${SCRIPT_VERSION}"
 		printf "    ============================\n"
 	else
 		printf "    =================================\n"
@@ -850,7 +912,7 @@ while true; do
 			umount /mnt2  > /dev/null 2>&1
 			sleep 1
 			#For C2 show cursor
-			[ "${O_BOARD}" = "C2" ] && tput cnorm
+			[ ! "${O_BOARD}" = "XU" ] && tput cnorm
 			#===============
 			break="bbox"
 			maybe_break bbox
@@ -858,7 +920,7 @@ while true; do
 			printf "\n    \033[32mBusybox exited\033[37m\n"
 			sleep 2
 			#For C2 hide cursor
-			[ "${O_BOARD}" = "C2" ] && tput civis
+			[ ! "${O_BOARD}" = "XU" ] && tput civis
 			A="Z"
 			os_detect
 			_boot_delay=$BOOTDELAY

@@ -7,10 +7,9 @@ fi
 
 usage() {
 	printf "\n\033[33m"
-    printf "USAGE: prepare_selfinst dest board [emmc]\n"
+    printf "USAGE: prepare_selfinst dest board\n"
     printf "       \033[1mdest\033[22m   destination, block device (/dev/sdX) or image name\n"
     printf "       \033[1mboard\033[22m  Odroid board type: \033[1mc2\033[22m or \033[1mxu4\033[22m\n"
-    printf "       \033[1memmc\033[22m  Prepare EMMC card, only valid for Odroid-C2, default is SD\n"
 	printf "\033[37m\n"
 }
 
@@ -36,25 +35,20 @@ if [ "${1}" = "" ]; then
     usage
     exit 1
 fi
-if [ ! "${2}" = "xu4" ] && [ ! "${2}" = "c2" ]; then
+if [ ! "${2}" = "xu4" ] && [ ! "${2}" = "c2" ] && [ ! "${2}" = "c1" ]; then
     printf "\n\033[31m\033[1mOdroid board type must be \033[33mxu4\033[31m or \033[33mc2\033[31m\033[37m\n"
     usage
     exit 1
 fi
 
-emmc_install=""
-emmc_disp=""
 if [ "${2}" = "c2" ]; then
 	part_start=65536       # RESERVE 32MB AT CARD START
 	o_device="c2"
 	src_dir="C2"
-	if [ "${3}" = "emmc" ] || [ "${3}" = "EMMC" ]; then
-		emmc_install="yes"
-		emmc_disp="(EMMC card)"
-	else
-		emmc_install="no"
-		emmc_disp="(SD card)"
-	fi
+elif [ "${2}" = "c1" ]; then
+	part_start=65536       # RESERVE 32MB AT CARD START
+	o_device="c1"
+	src_dir="C1"
 else
 	part_start=131072      # RESERVE 64MB AT CARD START
 	o_device="xu4"
@@ -89,7 +83,7 @@ echo "========================================================"
 echo "= Preparing Odroid MultiBoot selfinstall sd card/image ="
 echo "========================================================"
 printf "\033[22m\033[37m\n"
-printf "\033[33mPreparing for \033[1mOdroid-%s %s\033[22m\033[37m\n\n" "${o_device}" "${emmc_disp}"
+printf "\033[33mPreparing for \033[1mOdroid-%s\033[22m\033[37m\n\n" "${o_device}"
 
 # =================
 # Check destination
@@ -217,6 +211,26 @@ if [ ! "${_isimage}" = "yes" ]; then
             echo "ERROR installing tzsw.bin."
         fi
         sync
+	elif [ ${o_device} = "c1" ]; then
+		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=1 count=442 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing bl1.bin."
+		fi
+		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=512 skip=1 seek=1 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing bl1.bin."
+		fi
+		sync
+		dd if=${src_dir}/initramfs/ramfs/multi/u-boot.bin of=${sdcard} bs=512 seek=64 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing u-boot.bin."
+		fi
+		sync
+		# u-boot env erase
+		dd if=/dev/zero of=${sdcard} seek=1024 count=64 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR erasing u-boot environment."
+		fi
 	else
 		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} bs=1 count=442 > /dev/null 2>&1
 		if [ $? -ne 0 ]; then
@@ -251,24 +265,18 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+#========================================================================
 echo "Copying installation files..."
 mkdir _mnt/multiboot > /dev/null 2>&1
 
-cp ${src_dir}/multiboot/*.multi _mnt/multiboot > /dev/null 2>&1
+cp -rf ${src_dir}/multiboot/* _mnt/multiboot > /dev/null 2>&1
 if [ $? -ne 0 ]; then
     image_error_exit "ERROR installing multiboot files on ${sdcard}1."
     exit 1
 fi
 if [ ${o_device} = "xu4" ]; then
-	cp ${src_dir}/multiboot/boot.scr.multi _mnt/boot.scr > /dev/null 2>&1
+	cp _mnt/multiboot/boot.scr.multi _mnt/boot.scr > /dev/null 2>&1
 else
-	if [ "${emmc_install}" = "yes" ]; then
-		sed -i "s/setenv CARD_TYPE SD/setenv CARD_TYPE EMMC/g" _mnt/multiboot/boot.ini.multi > /dev/null 2>&1
-		if [ $? -ne 0 ]; then
-			image_error_exit "ERROR modifying multiboot ini file on ${sdcard}1."
-			exit 1
-		fi
-	fi
 	cp _mnt/multiboot/boot.ini.multi _mnt/boot.ini > /dev/null 2>&1
 fi
 if [ $? -ne 0 ]; then
@@ -282,7 +290,9 @@ if [ $? -ne 0 ]; then
 else
     rmdir _mnt
 fi
+#========================================================================
 
+#=====================================================================================================================
 if [ "${_isimage}" = "yes" ]; then
     echo "Creating final image..."
     dd if=${sdcard}0 of=${sdcard} > /dev/null 2>&1
@@ -314,6 +324,26 @@ if [ "${_isimage}" = "yes" ]; then
             echo "ERROR installing tzsw.bin."
         fi
         sync
+	elif [ ${o_device} = "c1" ]; then
+		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} conv=notrunc bs=1 count=442 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing bl1.bin."
+		fi
+		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} conv=notrunc bs=512 skip=1 seek=1 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing bl1.bin."
+		fi
+		sync
+		dd if=${src_dir}/initramfs/ramfs/multi/u-boot.bin of=${sdcard} conv=notrunc bs=512 seek=64 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR installing u-boot.bin."
+		fi
+		sync
+		# u-boot env erase
+		dd if=/dev/zero of=${sdcard} conv=notrunc seek=1024 count=64 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "ERROR erasing u-boot environment."
+		fi
 	else
 		dd if=${src_dir}/initramfs/ramfs/multi/bl1.bin of=${sdcard} conv=notrunc bs=1 count=442 > /dev/null 2>&1
 		if [ $? -ne 0 ]; then
@@ -337,6 +367,7 @@ if [ "${_isimage}" = "yes" ]; then
 	fi
     sleep 1
 fi
+#=====================================================================================================================
 
 
 rm -rf tmp/* > /dev/null 2>&1

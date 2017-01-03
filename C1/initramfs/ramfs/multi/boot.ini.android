@@ -1,0 +1,73 @@
+ODROIDC-UBOOT-CONFIG
+ 
+# Resolution Configuration
+# 'hdmimode' must be one of below to configure display resolution within
+# supported by your TV or monitor.
+#    Symbol           | Resolution
+# --------------------+-------------
+#    "vga"            | 640x480
+#    "480p"           | 720x480
+#    "576p"           | 720x576
+#    "800x480p60hz"   | 800x480
+#    "800x600p60hz"   | 800x600
+#    "1024x600p60hz"  | 1024x600
+#    "1024x768p60hz"  | 1024x768
+#    "1080i50hz"      | 1080I@50Hz
+#    "1080p24hz"      | 1080P@24Hz
+#    "1080p50hz"      | 1080P@50Hz
+#    "1080p"          | 1080P@60Hz
+#    "720p"           | 1280x720
+#    "800p"           | 1280x800
+#    "sxga"           | 1280x1024
+#    "1360x768p60hz"  | 1360x768
+#    "1366x768p60hz"  | 1366x768
+#    "1440x900p60hz"  | 1440x900
+#    "1600x900p60hz"  | 1600x900
+#    "1680x1050p60hz" | 1680x1050
+#    "1920x1200"      | 1920x1200
+setenv hdmimode "1080p"
+ 
+# HDMI/DVI Mode Configuration
+# This will enforce the singal type of display
+# "hdmi" - For HDMI interface
+# "dvi"  - For DVI interface
+setenv vout_mode "hdmi"
+ 
+# HPD enable/disable option
+setenv disablehpd "true"
+ 
+# Overscan offset configuration
+# All offsets are zero and can be tuned by manual or ODROID Utility
+setenv overscan_top "0"
+setenv overscan_left "0"
+setenv overscan_bottom "0"
+setenv overscan_right "0"
+suspend_hdmiphy=0
+ 
+# UHS Card Configuration
+# Uncomment the line below to __DISABLE__ UHS-1 MicroSD support
+# This might break boot for some brand/models of cards.
+setenv disableuhs "disableuhs"
+ 
+# Disable IR remote
+setenv ir_remote "1"
+ 
+setenv selinuxopt "androidboot.selinux=disabled"
+ 
+# Booting
+setenv bootargs "root=/dev/mmcblk0p2 rw console=ttyS0,115200n8 no_console_suspend vdaccfg=${vdac_config} logo=osd1,loaded,${fb_addr},${outputmode},full hdmimode=${hdmimode} cvbsmode=${cvbsmode} hdmitx=${cecconfig} vout=${vout_mode} disablehpd=${disablehpd} ${disableuhs} androidboot.serialno=${fbt_id#} ir_remote=${ir_remote} usbcore.autosuspend=-1 ${selinuxopt} suspend_hdmiphy=${suspend_hdmiphy}"
+ 
+#save
+ 
+#setenv bootcmd "movi read 0x660 0 0x800000 0x12000000; movi read 0x5E0 0 0x10000 0x12800000; bootm 0x12000000 - 0x12800000"
+setenv bootcmd "fatload mmc 0:1 0x12000000 multiboot/uImage.android; fatload mmc 0:1 0x12800000 multiboot/meson8b_odroidc.dtb.android; bootm 0x12000000 - 0x12800000"
+
+# =================================================
+# = RESTORE boot.ini FOR MULTIBOOT, DO NOT CHANGE =
+# =================================================
+fatload mmc 0:1 0x30000000 multiboot/boot.ini.multi
+fatwrite mmc 0:1 0x30000000 boot.ini ${filesize}
+# =================================================
+
+
+run bootcmd 

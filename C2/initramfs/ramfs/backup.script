@@ -7,12 +7,10 @@ multiboot_label="sd"
 #--------------------------------------------------
 disp_header() {
 	clear
-	printf "\n"
-	printf "\n"
-	printf "\033[36m\033[1m\n"
-	if [ "${O_BOARD}" = "C2" ]; then
+	printf "\n\033[36m\033[1m\n"
+	if [ ! "${O_BOARD}" = "XU" ]; then
 		printf "    =================================\n"
-		printf "    = Odroid C2 Backup utility %s =\n" "${SCRIPT_VERSION}"
+		printf "    = Odroid %s Backup utility %s =\n" "${O_BOARD}" "${SCRIPT_VERSION}"
 		printf "    =================================\n"
 	else
 		printf "    ======================================\n"
@@ -165,7 +163,7 @@ backup_android() {
 			printf "ERROR: Image\n"
 			return 1
 		fi
-		if [ "${O_BOARD}" = "C2" ]; then
+		if [ ! "${O_BOARD}" = "XU" ]; then
 			cp /mnt1/multiboot/${ODROID_DTB}.android /mnt2/${BKP_PREFIX}_backup/android/${ODROID_DTB} >> ${log_file} 2>&1
 			if [ $? -ne 0 ]; then
 				printf "ERROR: dtb\n"
@@ -173,7 +171,7 @@ backup_android() {
 			fi
 		fi
 	else
-		# Original Odroid android, extract kernel/dtp from the card
+		# Original Odroid android, extract kernel/dtb from the card
 		if [ -f /mnt1/${ODROID_IMAGE} ]; then
 			cp /mnt1/${ODROID_IMAGE} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
 			if [ $? -ne 0 ]; then
@@ -181,16 +179,18 @@ backup_android() {
 				return 1
 			fi
 		else
-			if [ "${O_BOARD}" = "C2" ]; then
-				dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1632 count=32768 >> ${log_file} 2>&1
-			else
-				dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1263 count=16384 >> ${log_file} 2>&1
+			if [ ! "${O_BOARD}" = "C1" ]; then
+				if [ "${O_BOARD}" = "C2" ]; then
+					dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1632 count=32768 >> ${log_file} 2>&1
+				elif [ "${O_BOARD}" = "XU" ]; then
+					dd if=/dev/mmcblk${card_no} of=/mnt2/${BKP_PREFIX}_backup/android/${ODROID_IMAGE} bs=512 skip=1263 count=16384 >> ${log_file} 2>&1
+				fi
+				if [ $? -ne 0 ]; then
+					printf "ERROR: Kernel\n"
+					return 1
+				fi
+				sync
 			fi
-			if [ $? -ne 0 ]; then
-				printf "ERROR: Kernel\n"
-				return 1
-			fi
-			sync
 		fi
 		if [ -f /mnt1/${ODROID_DTB} ]; then
 			cp /mnt1/${ODROID_DTB} /mnt2/${BKP_PREFIX}_backup/android >> ${log_file} 2>&1
@@ -328,7 +328,7 @@ backup_oelec() {
 		printf "ERROR: dtb\n"
 		return 1
 	fi
-	if [ ! "${O_BOARD}" = "C2" ]; then
+	if [ "${O_BOARD}" = "XU" ]; then
 		cp /mnt1/multiboot/INITRD /mnt2/${BKP_PREFIX}_backup/oelec/target >> ${log_file} 2>&1
 		if [ $? -ne 0 ]; then
 			printf "ERROR: INITRD\n"
@@ -379,11 +379,9 @@ umount /mnt2 > /dev/null 2>&1
 
 disp_header
 
-
 # ===============
 # Check USB drive
 # ===============
-
 if [ ! -b /dev/sda ]; then
 	printf "    ERROR: USB drive not found\n"
 	exit_script
@@ -426,7 +424,6 @@ if [ $max_usbpart -eq 0 ] || [ "${usb_part}" = "0" ]; then
 	printf "    ERROR: no usable USB partition found!\n"
 	exit_script
 fi
-
 
 _delay=30
 usb_part="1"
@@ -525,7 +522,7 @@ printf " to \033[1mUSB partition #%s\033[22m\033[37m\n\n" "${usb_part}"
 /bin/mountx /dev/mmcblk${card_no}p2 /mnt1 >> ${log_file} 2>&1
 if [ $? -ne 0 ]; then
 	umount /mnt2 > /dev/null 2>&1
-	printf "    ERROR mounting source card\n"
+	printf "    ERROR mounting source card, nothing to backup\n"
 	exit_script
 fi
 
